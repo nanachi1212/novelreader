@@ -108,13 +108,15 @@ compose.desktop {
     application {
         mainClass = "app.novelreader.MainKt"
 
+        buildDir = project.rootDir.resolve("release")
+
         buildTypes.release.proguard {
             // opencc4j / juniversalchardet 依賴資源檔，避免被 proguard 剝離
             isEnabled.set(false)
         }
 
         nativeDistributions {
-            // 只使用 createReleaseDistributable 產出 app-image 資料夾（免 WiX、解壓即用）
+            outputBaseDir.set(project.rootDir.resolve("release/dist"))
             targetFormats(TargetFormat.Msi)
             packageName = "NovelReader"
             packageVersion = "1.0.0"
