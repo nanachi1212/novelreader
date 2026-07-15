@@ -58,7 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.SyncRecord
@@ -264,7 +263,8 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     fontSize = settings.fontSizeSp.sp,
                     lineHeight = (settings.fontSizeSp * settings.lineHeightMult).sp,
                     fontFamily = fontFamily,
-                    textIndent = TextIndent(firstLine = 2.em),
+                    // 首行縮排兩個字；Compose Desktop（Skiko）不支援 em，必須用 sp
+                    textIndent = TextIndent(firstLine = (settings.fontSizeSp * 2).sp),
                     color = MaterialTheme.colorScheme.onBackground,
                 )
 
