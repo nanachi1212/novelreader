@@ -51,7 +51,7 @@ object DesktopPlatform : Platform {
 
     override suspend fun pickSyncFolder(): SyncFolder? = withContext(Dispatchers.Swing) {
         val chooser = JFileChooser().apply {
-            dialogTitle = "選擇同步資料夾（小說所在的 Google Drive 資料夾）"
+            dialogTitle = "選擇同步資料夾（小說所在的 Google Drive 或 Autosync 資料夾）"
             fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
         }
         if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
@@ -66,7 +66,7 @@ object DesktopPlatform : Platform {
 
     override fun resolveSyncFolder(uriOrPath: String): SyncFolder? {
         val f = File(uriOrPath)
-        return if (f.isDirectory) DesktopSyncFolder(f) else null
+        return if (f.isDirectory && f.exists()) DesktopSyncFolder(f) else null
     }
 
     override fun listFonts(): List<AppFont> {

@@ -30,6 +30,7 @@ class AppState(val platform: Platform) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val stores = AppStores(platform)
     val repository = BookRepository(platform, stores)
+    val syncManager by lazy { app.novelreader.data.SyncManager(stores, ::getSyncFolder) }
 
     var initialized by mutableStateOf(false)
         private set
@@ -38,6 +39,7 @@ class AppState(val platform: Platform) {
     var library by mutableStateOf(Library())
         private set
     var screen by mutableStateOf<Screen>(Screen.Bookshelf)
+    var syncFolderUri by mutableStateOf<String?>(null)
 
     val fonts: List<AppFont> by lazy { platform.listFonts() }
 
@@ -49,12 +51,17 @@ class AppState(val platform: Platform) {
         if (initialized) return
         settings = stores.loadSettings()
         library = stores.loadLibrary()
+        syncFolderUri = settings.syncFolderUri
         initialized = true
     }
+
+    private fun getSyncFolder(): app.novelreader.platform.SyncFolder? =
+        syncFolderUri?.let { platform.resolveSyncFolder(it) }
 
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
         val updated = transform(settings)
         settings = updated
+        syncFolderUri = updated.syncFolderUri
         scope.launch { stores.saveSettings(updated) }
     }
 
@@ -79,8 +86,9 @@ class AppState(val platform: Platform) {
         }
     }
 
-    /** 立即保存目前閱讀進度（阻塞到寫完） */
+    /** 立即保存目前閱讀進度與同步（阻塞到寫完） */
     suspend fun flushNow() {
         readerFlush?.invoke()
+        syncManager.flushAll()
     }
 }

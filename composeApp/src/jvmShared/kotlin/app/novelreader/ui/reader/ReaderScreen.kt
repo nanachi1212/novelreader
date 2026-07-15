@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
@@ -80,6 +81,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     var chapterLoadTick by remember { mutableStateOf(0) }
     var chromeVisible by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showEncodingDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val tocListState = rememberLazyListState()
@@ -371,6 +373,9 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         TextButton(onClick = { showSettingsSheet = true }) {
                             Text("Aa", style = MaterialTheme.typography.titleMedium)
                         }
+                        IconButton(onClick = { showEncodingDialog = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                        }
                     }
                 }
             }
@@ -379,5 +384,22 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
 
     if (showSettingsSheet) {
         ReaderSettingsSheet(state = state, onDismiss = { showSettingsSheet = false })
+    }
+
+    if (showEncodingDialog) {
+        EncodingDialog(
+            currentCharset = meta.charset,
+            onDismiss = { showEncodingDialog = false },
+            onReimport = { charset ->
+                scope.launch {
+                    state.repository.reimportWithCharset(meta, charset).collect { st ->
+                        if (st is app.novelreader.data.BookRepository.ImportState.Done) {
+                            state.refreshLibrary()
+                            showEncodingDialog = false
+                        }
+                    }
+                }
+            },
+        )
     }
 }

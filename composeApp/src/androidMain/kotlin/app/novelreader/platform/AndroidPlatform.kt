@@ -65,13 +65,13 @@ class AndroidPlatform(
 
     override fun resolveSource(uriOrPath: String): BookSource? = try {
         val uri = Uri.parse(uriOrPath)
-        SafBookSource(activity, uri).also { it.sizeBytes } // 觸發一次查詢確認權限有效
+        SafBookSource(activity, uri).also { it.sizeBytes }
     } catch (_: Exception) {
         null
     }
 
     override fun resolveSyncFolder(uriOrPath: String): SyncFolder? = try {
-        SafSyncFolder(activity, Uri.parse(uriOrPath))
+        SafSyncFolder(activity, Uri.parse(uriOrPath)).also { it.list() }  // 驗證權限
     } catch (_: Exception) {
         null
     }
