@@ -177,6 +177,65 @@ object Transcoder {
         }
     }
 
+    /**
+     * EPUB 用：章節標題與段落已由 EpubParser 決定，不需編碼偵測/標題 regex。
+     * 單章仍套用 MAX_CHAPTER_BYTES 硬切保護（極少數把整本書塞進一個 xhtml 的畸形 EPUB）。
+     */
+    fun transcodeEpub(
+        chapters: List<Pair<String, List<String>>>,
+        outFile: File,
+        onProgress: (Float) -> Unit = {},
+    ): Result {
+        data class Span(val title: String, val start: Long)
+
+        val spans = ArrayList<Span>()
+        var outOffset = 0L
+        val total = chapters.size.coerceAtLeast(1)
+
+        outFile.parentFile?.mkdirs()
+        val tmpFile = File(outFile.parentFile, outFile.name + ".tmp")
+
+        BufferedOutputStream(FileOutputStream(tmpFile), 128 * 1024).use { out ->
+            for ((ci, pair) in chapters.withIndex()) {
+                val (title, paragraphs) = pair
+                spans.add(Span(title, outOffset))
+                var lastCut = outOffset
+                var cont = 2
+                for (line in paragraphs) {
+                    val bytes = line.toByteArray(Charsets.UTF_8)
+                    out.write(bytes)
+                    out.write('\n'.code)
+                    outOffset += bytes.size + 1
+                    if (outOffset - lastCut > MAX_CHAPTER_BYTES) {
+                        spans.add(Span("$title（續$cont）", outOffset))
+                        lastCut = outOffset
+                        cont++
+                    }
+                }
+                onProgress((ci + 1).toFloat() / total)
+            }
+        }
+
+        if (outFile.exists()) outFile.delete()
+        if (!tmpFile.renameTo(outFile)) {
+            java.nio.file.Files.move(
+                tmpFile.toPath(), outFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+
+        val result = spans.mapIndexed { i, s ->
+            ChapterIndexEntry(
+                index = i,
+                title = s.title,
+                byteStart = s.start,
+                byteEnd = if (i + 1 < spans.size) spans[i + 1].start else outOffset,
+            )
+        }
+        onProgress(1f)
+        return Result(result, outOffset, "UTF-8")
+    }
+
     private fun readSample(ins: InputStream): ByteArray {
         val buf = ByteArray(SAMPLE_SIZE)
         var off = 0

@@ -1,5 +1,7 @@
 package app.novelreader.platform
 
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Typeface
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +41,10 @@ object DesktopPlatform : Platform {
     }
 
     override suspend fun pickBookFile(): BookSource? = withContext(Dispatchers.Swing) {
-        val dialog = FileDialog(null as Frame?, "選擇書籍檔案", FileDialog.LOAD)
-        dialog.file = "*.txt"
+        val dialog = FileDialog(null as Frame?, "選擇書籍檔案（txt / epub）", FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name ->
+            name.endsWith(".txt", ignoreCase = true) || name.endsWith(".epub", ignoreCase = true)
+        }
         dialog.isVisible = true
         val dir = dialog.directory
         val name = dialog.file
@@ -89,6 +93,12 @@ object DesktopPlatform : Platform {
                 FontFamily.Default
             }
         }
+    }
+
+    override fun decodeImage(bytes: ByteArray): ImageBitmap? = try {
+        org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap()
+    } catch (_: Exception) {
+        null
     }
 }
 

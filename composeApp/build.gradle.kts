@@ -37,6 +37,7 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.juniversalchardet)
                 implementation(libs.opencc4j)
+                implementation(libs.jsoup)
             }
         }
         val desktopMain by getting {
@@ -46,6 +47,7 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.juniversalchardet)
                 implementation(libs.opencc4j)
+                implementation(libs.jsoup)
             }
         }
         val desktopTest by getting {

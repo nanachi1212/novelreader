@@ -21,6 +21,7 @@ data class BookMeta(
     /** 轉碼後 content.txt 的總位元組數（計算閱讀百分比用） */
     val totalBytes: Long = 0,
     val coverPath: String? = null,
+    val tags: List<String> = emptyList(),
 )
 
 @Serializable

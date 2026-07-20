@@ -8,3 +8,5 @@ local.properties
 captures/
 .kotlin/
 test-books/
+test-chinese/
+release/

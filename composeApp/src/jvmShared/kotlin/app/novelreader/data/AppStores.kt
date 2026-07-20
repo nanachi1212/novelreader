@@ -34,6 +34,7 @@ class AppStores(private val platform: Platform) {
 
     fun booksDir(fingerprint: String): File = File(root, "books${File.separator}$fingerprint")
     fun contentFile(fingerprint: String): File = File(booksDir(fingerprint), "content.txt")
+    fun coverFile(fingerprint: String): File = File(booksDir(fingerprint), "cover.jpg")
     private fun chaptersFile(fingerprint: String): File = File(booksDir(fingerprint), "chapters.json")
     private fun bookDataFile(fingerprint: String): File = File(booksDir(fingerprint), "book.json")
     private val libraryFile: File get() = File(root, "library.json")
@@ -87,6 +88,18 @@ class AppStores(private val platform: Platform) {
 
     suspend fun deleteBook(fingerprint: String) = withContext(Dispatchers.IO) {
         mutex.withLock { booksDir(fingerprint).deleteRecursively() }
+    }
+
+    fun saveCover(fingerprint: String, bytes: ByteArray) {
+        val f = coverFile(fingerprint)
+        f.parentFile?.mkdirs()
+        f.writeBytes(bytes)
+    }
+
+    /** 匯入用暫存檔（如 EPUB 需要 ZipFile 隨機存取，SAF/串流來源需先落地）；呼叫端用完需自行刪除 */
+    fun newTempFile(suffix: String): File {
+        val dir = File(root, "tmp").apply { mkdirs() }
+        return File(dir, "${UUID.randomUUID()}$suffix")
     }
 
     // ---- helpers ----

@@ -3,6 +3,7 @@ package app.novelreader.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.novelreader.core.convert.ChineseConvert
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.Library
 import app.novelreader.core.model.ReaderSettings
@@ -53,6 +54,7 @@ class AppState(val platform: Platform) {
         library = stores.loadLibrary()
         syncFolderUri = settings.syncFolderUri
         initialized = true
+        scope.launch(Dispatchers.IO) { ChineseConvert.warmUp() }
     }
 
     private fun getSyncFolder(): app.novelreader.platform.SyncFolder? =

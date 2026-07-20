@@ -1,8 +1,10 @@
 package app.novelreader.ui.bookshelf
 
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,20 +14,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,13 +60,26 @@ import app.novelreader.ui.formatPercent
 import app.novelreader.ui.formatRelativeTime
 import kotlinx.coroutines.launch
 
+private val QUICK_TAGS = listOf("在看", "已看完", "想看")
+
+private enum class SortMode(val label: String) {
+    RECENT("最近閱讀"), TITLE("書名"), IMPORTED("新增時間"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BookshelfScreen(state: AppState) {
     val scope = rememberCoroutineScope()
     var importState by remember { mutableStateOf<ImportState?>(null) }
     var removeTarget by remember { mutableStateOf<BookMeta?>(null) }
+    var optionsTarget by remember { mutableStateOf<BookMeta?>(null) }
+    var tagEditTarget by remember { mutableStateOf<BookMeta?>(null) }
+    var duplicatePrompt by remember { mutableStateOf<Pair<BookMeta, BookMeta>?>(null) }
     var progressMap by remember { mutableStateOf(emptyMap<String, ReadingProgress>()) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(SortMode.RECENT) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var activeTag by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.library) {
         val map = HashMap<String, ReadingProgress>()
@@ -63,6 +87,21 @@ fun BookshelfScreen(state: AppState) {
             state.stores.loadBookData(book.fingerprint)?.let { map[book.fingerprint] = it.progress }
         }
         progressMap = map
+    }
+
+    fun setTags(fingerprint: String, newTags: List<String>) {
+        scope.launch {
+            val updatedBooks = state.library.books.map {
+                if (it.fingerprint == fingerprint) it.copy(tags = newTags) else it
+            }
+            state.stores.saveLibrary(state.library.copy(books = updatedBooks))
+            state.refreshLibrary()
+        }
+    }
+
+    fun toggleTag(fingerprint: String, tag: String) {
+        val book = state.library.books.find { it.fingerprint == fingerprint } ?: return
+        setTags(fingerprint, if (tag in book.tags) book.tags - tag else book.tags + tag)
     }
 
     fun startImport() {
@@ -73,22 +112,95 @@ fun BookshelfScreen(state: AppState) {
                 if (st is ImportState.Done) {
                     state.refreshLibrary()
                     importState = null
-                    state.openBook(st.meta)
+                    if (st.possibleDuplicateOf != null) {
+                        duplicatePrompt = st.meta to st.possibleDuplicateOf
+                    } else {
+                        state.openBook(st.meta)
+                    }
                 }
             }
         }
     }
 
+    val allTags = remember(state.library) {
+        (QUICK_TAGS + state.library.books.flatMap { it.tags }).distinct()
+    }
+
+    val visibleBooks = remember(state.library, progressMap, searchQuery, sortMode, activeTag) {
+        state.library.books
+            .filter { activeTag == null || activeTag in it.tags }
+            .filter { searchQuery.isBlank() || it.title.contains(searchQuery, ignoreCase = true) }
+            .let { list ->
+                when (sortMode) {
+                    SortMode.RECENT -> list.sortedByDescending { b ->
+                        progressMap[b.fingerprint]?.updatedAt?.takeIf { it > 0 } ?: b.importedAt
+                    }
+                    SortMode.TITLE -> list.sortedBy { it.title }
+                    SortMode.IMPORTED -> list.sortedByDescending { it.importedAt }
+                }
+            }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("書架") },
-                actions = {
-                    IconButton(onClick = { state.screen = Screen.Settings }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "設定")
+            Column {
+                TopAppBar(
+                    title = { Text("書架") },
+                    actions = {
+                        Box {
+                            TextButton(onClick = { sortMenuOpen = true }) {
+                                Text(sortMode.label)
+                            }
+                            DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                                for (mode in SortMode.entries) {
+                                    DropdownMenuItem(
+                                        text = { Text("依${mode.label}排序") },
+                                        onClick = { sortMode = mode; sortMenuOpen = false },
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = { state.screen = Screen.Settings }) {
+                            Icon(Icons.Filled.Settings, contentDescription = "設定")
+                        }
+                    },
+                )
+                if (state.library.books.isNotEmpty()) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        placeholder = { Text("搜尋書名…") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = if (searchQuery.isNotEmpty()) {
+                            { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Close, contentDescription = "清除") } }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                    if (allTags.isNotEmpty()) {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            item {
+                                FilterChip(
+                                    selected = activeTag == null,
+                                    onClick = { activeTag = null },
+                                    label = { Text("全部") },
+                                )
+                            }
+                            items(allTags) { tag ->
+                                FilterChip(
+                                    selected = activeTag == tag,
+                                    onClick = { activeTag = if (activeTag == tag) null else tag },
+                                    label = { Text(tag) },
+                                )
+                            }
+                        }
                     }
-                },
-            )
+                }
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -98,11 +210,7 @@ fun BookshelfScreen(state: AppState) {
             )
         },
     ) { padding ->
-        val books = state.library.books.sortedByDescending { book ->
-            progressMap[book.fingerprint]?.updatedAt?.takeIf { it > 0 } ?: book.importedAt
-        }
-
-        if (books.isEmpty()) {
+        if (state.library.books.isEmpty()) {
             Column(
                 Modifier.fillMaxSize().padding(padding),
                 verticalArrangement = Arrangement.Center,
@@ -111,10 +219,18 @@ fun BookshelfScreen(state: AppState) {
                 Text("書架是空的", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "點右下角「匯入書籍」選擇 txt 檔開始閱讀",
+                    "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        } else if (visibleBooks.isEmpty()) {
+            Column(
+                Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("沒有符合的書籍", style = MaterialTheme.typography.titleMedium)
             }
         } else {
             LazyColumn(
@@ -124,13 +240,14 @@ fun BookshelfScreen(state: AppState) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(books, key = { it.fingerprint }) { book ->
+                items(visibleBooks, key = { it.fingerprint }) { book ->
                     val progress = progressMap[book.fingerprint]
                     BookCard(
+                        state = state,
                         book = book,
                         progress = progress,
                         onClick = { state.openBook(book) },
-                        onLongClick = { removeTarget = book },
+                        onLongClick = { optionsTarget = book },
                     )
                 }
             }
@@ -165,6 +282,89 @@ fun BookshelfScreen(state: AppState) {
         else -> {}
     }
 
+    // 書籍選項（長按觸發）
+    optionsTarget?.let { book ->
+        AlertDialog(
+            onDismissRequest = { optionsTarget = null },
+            title = { Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = { tagEditTarget = book; optionsTarget = null },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("編輯標籤") }
+                    TextButton(
+                        onClick = { removeTarget = book; optionsTarget = null },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("移除書籍") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { optionsTarget = null }) { Text("取消") }
+            },
+        )
+    }
+
+    // 標籤編輯
+    tagEditTarget?.let { target ->
+        val live = state.library.books.find { it.fingerprint == target.fingerprint } ?: target
+        var customTag by remember(live.fingerprint) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { tagEditTarget = null },
+            title = { Text("編輯標籤：${live.title}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (tag in QUICK_TAGS) {
+                            FilterChip(
+                                selected = tag in live.tags,
+                                onClick = { toggleTag(live.fingerprint, tag) },
+                                label = { Text(tag) },
+                            )
+                        }
+                    }
+                    val customTags = live.tags.filterNot { it in QUICK_TAGS }
+                    if (customTags.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            for (tag in customTags) {
+                                FilterChip(
+                                    selected = true,
+                                    onClick = { toggleTag(live.fingerprint, tag) },
+                                    label = { Text(tag) },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customTag,
+                            onValueChange = { customTag = it },
+                            singleLine = true,
+                            placeholder = { Text("自訂標籤") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = {
+                            val t = customTag.trim()
+                            if (t.isNotEmpty() && t !in live.tags) toggleTag(live.fingerprint, t)
+                            customTag = ""
+                        }) { Text("新增") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { tagEditTarget = null }) { Text("完成") }
+            },
+        )
+    }
+
     // 移除確認
     removeTarget?.let { book ->
         AlertDialog(
@@ -182,16 +382,65 @@ fun BookshelfScreen(state: AppState) {
             },
         )
     }
+
+    // 匯入時發現書名相似的書
+    duplicatePrompt?.let { (newMeta, oldMeta) ->
+        AlertDialog(
+            onDismissRequest = { duplicatePrompt = null; state.openBook(newMeta) },
+            title = { Text("發現相似書名") },
+            text = {
+                Text(
+                    "書架上已經有《${oldMeta.title}》，剛剛匯入的《${newMeta.title}》書名很像，" +
+                        "但檔案不同（可能是不同編碼或來源），要怎麼處理？"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.removeBook(oldMeta)
+                    duplicatePrompt = null
+                    state.openBook(newMeta)
+                }) { Text("刪除原本那本") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        state.removeBook(newMeta)
+                        duplicatePrompt = null
+                    }) { Text("刪除新匯入的") }
+                    TextButton(onClick = {
+                        duplicatePrompt = null
+                        state.openBook(newMeta)
+                    }) { Text("保留兩本") }
+                }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookCard(
+    state: AppState,
     book: BookMeta,
     progress: ReadingProgress?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    var cover by remember(book.fingerprint) {
+        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    }
+    LaunchedEffect(book.fingerprint, book.coverPath) {
+        if (book.coverPath == null) return@LaunchedEffect
+        cover = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val bytes = state.stores.coverFile(book.fingerprint).takeIf { it.isFile }?.readBytes()
+                bytes?.let { state.platform.decodeImage(it) }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -200,38 +449,71 @@ private fun BookCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                book.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${book.chapterCount} 章 · ${book.charset}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    formatRelativeTime(progress?.updatedAt ?: 0),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(Modifier.padding(16.dp)) {
+            cover?.let { bmp ->
+                androidx.compose.foundation.Image(
+                    bitmap = bmp,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .width(48.dp)
+                        .height(64.dp)
+                        .padding(end = 12.dp),
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LinearProgressIndicator(
-                    progress = { progress?.percent ?: 0f },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    formatPercent(progress?.percent ?: 0f),
-                    style = MaterialTheme.typography.labelMedium,
+                    book.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${book.chapterCount} 章 · ${book.charset}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        formatRelativeTime(progress?.updatedAt ?: 0),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (book.tags.isNotEmpty()) {
+                    Row(
+                        Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        for (tag in book.tags) {
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(
+                                    tag,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(
+                        progress = { progress?.percent ?: 0f },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        formatPercent(progress?.percent ?: 0f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }

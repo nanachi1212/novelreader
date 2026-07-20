@@ -1,10 +1,13 @@
 package app.novelreader.platform
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CompletableDeferred
@@ -97,6 +100,12 @@ class AndroidPlatform(
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
+    }
+
+    override fun decodeImage(bytes: ByteArray): ImageBitmap? = try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } catch (_: Exception) {
+        null
     }
 }
 
