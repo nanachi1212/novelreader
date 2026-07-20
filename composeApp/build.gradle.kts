@@ -110,15 +110,15 @@ compose.desktop {
     application {
         mainClass = "app.novelreader.MainKt"
 
-        buildDir = project.rootDir.resolve("release")
-
+        // buildDir 用預設的 build/（已 gitignore），避免 Gradle 中繼產物跟真正要打包的東西混在一起，
+        // 之前混在 release/ 裡導致使用者在一堆 classes/generated/intermediates 資料夾裡找不到 exe
         buildTypes.release.proguard {
             // opencc4j / juniversalchardet 依賴資源檔，避免被 proguard 剝離
             isEnabled.set(false)
         }
 
         nativeDistributions {
-            outputBaseDir.set(project.rootDir.resolve("release/dist"))
+            outputBaseDir.set(layout.buildDirectory.dir("native-dist"))
             targetFormats(TargetFormat.Msi)
             packageName = "NovelReader"
             packageVersion = "1.0.0"
@@ -127,4 +127,13 @@ compose.desktop {
             }
         }
     }
+}
+
+// 產生可直接複製到隨身碟使用的免安裝資料夾：release/NovelReader/NovelReader.exe（路徑淺、資料夾裡沒有多餘雜物）
+tasks.register<Sync>("packagePortable") {
+    group = "distribution"
+    description = "打包成隨身碟可直接用的免安裝資料夾 release/NovelReader/"
+    dependsOn("createReleaseDistributable")
+    from(layout.buildDirectory.dir("native-dist/main-release/app/NovelReader"))
+    into(project.rootDir.resolve("release/NovelReader"))
 }
