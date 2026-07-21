@@ -64,7 +64,9 @@ object CharsetDetector {
         val big5Errors = decodeErrorCount(slice, big5)
 
         val diff = kotlin.math.abs(gbkErrors - big5Errors)
-        val threshold = maxOf(4, (maxOf(gbkErrors, big5Errors) / 10))
+        // 地板值需夠高：兩邊錯誤數都在個位數時（常見於 Big5 罕用符號在 JDK 內建表缺漏），
+        // 差距屬雜訊，應交給更可靠的字頻分支判斷，而非直接信任錯誤數較少的一方
+        val threshold = maxOf(10, (maxOf(gbkErrors, big5Errors) / 10))
         if (diff > threshold) {
             // 錯誤數差距明顯，直接取錯誤少的；GB 系一律回傳超集 GB18030
             return if (gbkErrors < big5Errors) safeCharset("GB18030") else big5

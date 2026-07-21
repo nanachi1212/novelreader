@@ -121,7 +121,7 @@ compose.desktop {
             outputBaseDir.set(layout.buildDirectory.dir("native-dist"))
             targetFormats(TargetFormat.Msi)
             packageName = "NovelReader"
-            packageVersion = "1.1.0"
+            packageVersion = "1.1.1"
             windows {
                 menuGroup = "NovelReader"
             }
