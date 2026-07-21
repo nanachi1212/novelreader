@@ -10,6 +10,9 @@ documentfile = "1.0.1"
 juniversalchardet = "2.5.0"
 opencc4j = "1.8.1"
 jsoup = "1.18.1"
+commonsCompress = "1.28.0"
+xz = "1.10"
+junrar = "7.5.5"
 
 [libraries]
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -22,6 +25,9 @@ androidx-documentfile = { group = "androidx.documentfile", name = "documentfile"
 juniversalchardet = { group = "com.github.albfernandez", name = "juniversalchardet", version.ref = "juniversalchardet" }
 opencc4j = { group = "com.github.houbb", name = "opencc4j", version.ref = "opencc4j" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
+xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
+junrar = { group = "com.github.junrar", name = "junrar", version.ref = "junrar" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 
 [plugins]

@@ -47,10 +47,13 @@ object DesktopPlatform : Platform {
         } else null
     }
 
+    override val archive: ArchiveSupport get() = DesktopArchiveSupport
+
     override suspend fun pickBookFile(): BookSource? = withContext(Dispatchers.Swing) {
-        val dialog = FileDialog(null as Frame?, "選擇書籍檔案（txt / epub）", FileDialog.LOAD)
+        val dialog = FileDialog(null as Frame?, "選擇書籍或壓縮檔（txt / epub / zip / rar / 7z）", FileDialog.LOAD)
         dialog.setFilenameFilter { _, name ->
-            name.endsWith(".txt", ignoreCase = true) || name.endsWith(".epub", ignoreCase = true)
+            name.endsWith(".txt", ignoreCase = true) || name.endsWith(".epub", ignoreCase = true) ||
+                DesktopArchiveSupport.isArchivePath(name)
         }
         dialog.isVisible = true
         val dir = dialog.directory
@@ -71,6 +74,12 @@ object DesktopPlatform : Platform {
     }
 
     override fun resolveSource(uriOrPath: String): BookSource? {
+        ArchiveUri.parse(uriOrPath)?.let { (archivePath, entryPath) ->
+            val af = File(archivePath)
+            return if (af.isFile) {
+                ArchiveEntryBookSource(af, entryPath, entryPath.substringAfterLast('/'), File(appDataDir, "tmp"))
+            } else null // 壓縮檔已被移走 → 走既有「找不到原始檔案」訊息
+        }
         val f = File(uriOrPath)
         return if (f.isFile) FileBookSource(f) else null
     }

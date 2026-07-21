@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 fun main() {
     val appState = AppState(DesktopPlatform)
     runBlocking { appState.init() }
+    appState.stores.cleanupTempFiles()
     val s = appState.settings
 
     application {

@@ -54,11 +54,17 @@ import androidx.compose.ui.unit.dp
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.ReadingProgress
 import app.novelreader.data.BookRepository.ImportState
+import app.novelreader.platform.ArchiveEntryInfo
+import app.novelreader.platform.ArchiveUri
+import app.novelreader.platform.BookSource
 import app.novelreader.ui.AppState
 import app.novelreader.ui.Screen
 import app.novelreader.ui.formatPercent
 import app.novelreader.ui.formatRelativeTime
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 private val QUICK_TAGS = listOf("在看", "已看完", "想看")
 
@@ -75,6 +81,10 @@ fun BookshelfScreen(state: AppState) {
     var optionsTarget by remember { mutableStateOf<BookMeta?>(null) }
     var tagEditTarget by remember { mutableStateOf<BookMeta?>(null) }
     var duplicatePrompt by remember { mutableStateOf<Pair<BookMeta, BookMeta>?>(null) }
+    var archiveScanning by remember { mutableStateOf(false) }
+    var archivePicker by remember { mutableStateOf<Pair<String, List<ArchiveEntryInfo>>?>(null) }
+    var batchProgress by remember { mutableStateOf<BatchProgress?>(null) }
+    var batchSummary by remember { mutableStateOf<BatchSummary?>(null) }
     var progressMap by remember { mutableStateOf(emptyMap<String, ReadingProgress>()) }
     var searchQuery by remember { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(SortMode.RECENT) }
@@ -104,20 +114,82 @@ fun BookshelfScreen(state: AppState) {
         setTags(fingerprint, if (tag in book.tags) book.tags - tag else book.tags + tag)
     }
 
+    /** 單本匯入（既有流程）：完成後直接開書、相似書名跳詢問 */
+    suspend fun importSingle(source: BookSource) {
+        state.repository.import(source).collect { st ->
+            importState = st
+            if (st is ImportState.Done) {
+                state.refreshLibrary()
+                importState = null
+                if (st.possibleDuplicateOf != null) {
+                    duplicatePrompt = st.meta to st.possibleDuplicateOf
+                } else {
+                    state.openBook(st.meta)
+                }
+            }
+        }
+    }
+
+    /** 批次匯入：逐本收 Flow、失敗續行、完成後留在書架顯示總結 */
+    suspend fun importArchiveEntries(archivePath: String, entries: List<ArchiveEntryInfo>) {
+        var imported = 0
+        var skipped = 0
+        var similar = 0
+        val failures = mutableListOf<Pair<String, String>>()
+        entries.forEachIndexed { i, entry ->
+            batchProgress = BatchProgress(i + 1, entries.size, entry.displayName, 0f)
+            val src = state.platform.resolveSource(ArchiveUri.build(archivePath, entry.entryPath))
+            if (src == null) {
+                failures += entry.displayName to "無法讀取壓縮檔"
+                return@forEachIndexed
+            }
+            state.repository.import(src).collect { st ->
+                when (st) {
+                    is ImportState.Progress ->
+                        batchProgress = BatchProgress(i + 1, entries.size, entry.displayName, st.fraction)
+                    is ImportState.Done -> {
+                        if (st.alreadyExisted) skipped++ else {
+                            imported++
+                            if (st.possibleDuplicateOf != null) similar++
+                        }
+                    }
+                    is ImportState.Error -> failures += entry.displayName to st.message
+                }
+            }
+        }
+        batchProgress = null
+        state.refreshLibrary()
+        batchSummary = BatchSummary(imported, skipped, similar, failures)
+    }
+
     fun startImport() {
         scope.launch {
             val source = state.platform.pickBookFile() ?: return@launch
-            state.repository.import(source).collect { st ->
-                importState = st
-                if (st is ImportState.Done) {
-                    state.refreshLibrary()
-                    importState = null
-                    if (st.possibleDuplicateOf != null) {
-                        duplicatePrompt = st.meta to st.possibleDuplicateOf
-                    } else {
-                        state.openBook(st.meta)
-                    }
+            val archive = state.platform.archive
+            if (archive == null || !archive.isArchivePath(source.uriOrPath)) {
+                importSingle(source)
+                return@launch
+            }
+            // 壓縮檔：列出內含書檔
+            archiveScanning = true
+            val entries = try {
+                withContext(Dispatchers.IO) { archive.listBookEntries(File(source.uriOrPath)) }
+            } catch (e: Exception) {
+                importState = ImportState.Error(e.message ?: "無法讀取壓縮檔")
+                return@launch
+            } finally {
+                archiveScanning = false
+            }
+            when {
+                entries.isEmpty() ->
+                    importState = ImportState.Error("壓縮檔內找不到任何 txt 或 epub 檔案")
+                entries.size == 1 -> {
+                    // 只有一本 → 維持單本語意（直接開書、相似書名照舊詢問）
+                    val src = state.platform.resolveSource(ArchiveUri.build(source.uriOrPath, entries[0].entryPath))
+                    if (src == null) importState = ImportState.Error("無法讀取壓縮檔")
+                    else importSingle(src)
                 }
+                else -> archivePicker = source.uriOrPath to entries
             }
         }
     }
@@ -219,7 +291,10 @@ fun BookshelfScreen(state: AppState) {
                 Text("書架是空的", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀",
+                    if (state.platform.archive != null)
+                        "點右下角「匯入書籍」選擇 txt / epub 或壓縮檔開始閱讀"
+                    else
+                        "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -281,6 +356,28 @@ fun BookshelfScreen(state: AppState) {
         )
         else -> {}
     }
+
+    // 壓縮檔匯入：掃描中 / 勾選 / 批次進度 / 總結
+    if (archiveScanning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("掃描壓縮檔…") },
+            text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
+            confirmButton = {},
+        )
+    }
+    archivePicker?.let { (archivePath, entries) ->
+        ArchiveEntryPickerDialog(
+            entries = entries,
+            onConfirm = { selected ->
+                archivePicker = null
+                scope.launch { importArchiveEntries(archivePath, selected) }
+            },
+            onDismiss = { archivePicker = null },
+        )
+    }
+    batchProgress?.let { BatchImportProgressDialog(it) }
+    batchSummary?.let { BatchImportSummaryDialog(it) { batchSummary = null } }
 
     // 書籍選項（長按觸發）
     optionsTarget?.let { book ->

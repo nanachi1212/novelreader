@@ -102,6 +102,14 @@ class AppStores(private val platform: Platform) {
         return File(dir, "${UUID.randomUUID()}$suffix")
     }
 
+    /** 清掉 tmp 下超過 24 小時的殘留（deleteOnExit 蓋不到的異常結束情況），啟動時呼叫 */
+    fun cleanupTempFiles() {
+        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        File(root, "tmp").listFiles()?.forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff) f.delete()
+        }
+    }
+
     // ---- helpers ----
 
     private inline fun <reified T> readJson(file: File): T? {

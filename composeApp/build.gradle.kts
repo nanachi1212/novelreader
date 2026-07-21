@@ -48,6 +48,11 @@ kotlin {
                 implementation(libs.juniversalchardet)
                 implementation(libs.opencc4j)
                 implementation(libs.jsoup)
+                // 壓縮檔匯入（僅桌面）：zip/7z 用 commons-compress；
+                // xz 是它的 optional 依賴，7z 的 LZMA2 解壓必需，須明列
+                implementation(libs.commons.compress)
+                implementation(libs.xz)
+                implementation(libs.junrar)
             }
         }
         val desktopTest by getting {
@@ -121,7 +126,7 @@ compose.desktop {
             outputBaseDir.set(layout.buildDirectory.dir("native-dist"))
             targetFormats(TargetFormat.Msi)
             packageName = "NovelReader"
-            packageVersion = "1.1.2"
+            packageVersion = "1.2.0"
             // jlink 只靜態分析 bytecode 偵測所需模組，Charset.forName() 是執行期字串查找，
             // 偵測不到 jdk.charsets（Big5/GBK 都在這個模組，只有 GB18030 內建在 java.base），
             // 必須手動加，不然打包版永遠無法真正使用 Big5/GBK
