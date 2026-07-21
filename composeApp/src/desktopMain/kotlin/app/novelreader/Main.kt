@@ -45,6 +45,7 @@ fun main() {
                     } catch (_: Exception) {
                     }
                 }
+                DesktopPlatform.tts?.shutdown()
                 exitApplication()
             },
             state = windowState,

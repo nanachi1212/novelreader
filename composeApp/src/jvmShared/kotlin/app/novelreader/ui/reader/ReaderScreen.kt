@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
@@ -75,6 +76,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -94,6 +96,18 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     var showSearchOverlay by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var highlightParagraph by remember { mutableStateOf<Int?>(null) }
+
+    // ---- 朗讀（TTS）----
+    val ttsEngine = state.platform.tts
+    val ttsController = remember(ttsEngine) { ttsEngine?.let { app.novelreader.tts.TtsController(it, scope) } }
+    var ttsActive by remember { mutableStateOf(false) }
+    var ttsPlaying by remember { mutableStateOf(false) }
+    var ttsParagraph by remember { mutableStateOf(0) }
+    /** 章節交界自動續唸旗標：openChapter 看到它就不停播 */
+    var ttsResumeOnLoad by remember { mutableStateOf(false) }
+    var ttsVoices by remember { mutableStateOf<List<app.novelreader.tts.TtsVoice>?>(null) }
+    var showTtsVoiceMenu by remember { mutableStateOf(false) }
+    var showTtsUnavailable by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val tocListState = rememberLazyListState()
@@ -142,6 +156,12 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     fun openChapter(index: Int, paragraph: Int = 0, highlight: Boolean = false, toEnd: Boolean = false) {
         val ld = loader ?: return
         if (ld.chapters.isEmpty()) return
+        // 使用者主動跳章時停止朗讀；章節交界自動續唸（ttsResumeOnLoad）除外
+        if (ttsActive && !ttsResumeOnLoad) {
+            ttsController?.stop()
+            ttsPlaying = false
+            ttsActive = false
+        }
         val target = index.coerceIn(0, ld.chapters.lastIndex)
         scope.launch {
             val loaded = ld.load(target)
@@ -157,6 +177,64 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             // 預載相鄰章節
             if (target + 1 <= ld.chapters.lastIndex) scope.launch { ld.load(target + 1) }
             if (target - 1 >= 0) scope.launch { ld.load(target - 1) }
+        }
+    }
+
+    /** 從 [index] 段開始朗讀（也用於暫停後繼續、跳段、改語速/語音後重唸） */
+    fun startTtsAt(index: Int) {
+        val ctrl = ttsController ?: return
+        val paragraphs = chapter?.paragraphs ?: return
+        if (paragraphs.isEmpty()) return
+        ctrl.rate = state.settings.ttsRate
+        ctrl.voiceId = state.settings.ttsVoiceId
+        ttsActive = true
+        ttsPlaying = true
+        ctrl.start(
+            paragraphs = paragraphs,
+            startIndex = index,
+            onParagraph = { i ->
+                ttsParagraph = i
+                scope.launch { listState.animateScrollToItem(i) }
+            },
+            onChapterDone = {
+                val ldNow = loader
+                val chNow = chapter
+                if (ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
+                    ttsResumeOnLoad = true
+                    openChapter(chNow.index + 1)
+                } else {
+                    ttsPlaying = false
+                }
+            },
+            onError = {
+                ttsPlaying = false
+                showTtsUnavailable = true
+            },
+        )
+    }
+
+    fun pauseTts() {
+        ttsController?.stop()
+        ttsPlaying = false
+    }
+
+    fun stopTts() {
+        ttsController?.stop()
+        ttsPlaying = false
+        ttsActive = false
+    }
+
+    /** 朗讀入口：先確認有語音（順便暖機引擎程序），再從目前可見段落開始唸 */
+    fun enterTts() {
+        val engine = ttsEngine ?: return
+        scope.launch {
+            val voices = ttsVoices ?: engine.listVoices().also { ttsVoices = it }
+            if (voices.isEmpty()) {
+                showTtsUnavailable = true
+            } else {
+                chromeVisible = false
+                startTtsAt(listState.firstVisibleItemIndex)
+            }
         }
     }
 
@@ -212,13 +290,17 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         chapter = ld.load(ch.index)
     }
 
-    // 章節載入後還原捲動位置
+    // 章節載入後還原捲動位置；朗讀跨章時從第一段續唸
     LaunchedEffect(chapterLoadTick) {
         val target = pendingScrollTo ?: return@LaunchedEffect
         val ch = chapter ?: return@LaunchedEffect
         listState.scrollToItem(target.coerceIn(0, ch.paragraphs.size))
         pendingScrollTo = null
         focusRequester.requestFocus()
+        if (ttsResumeOnLoad) {
+            ttsResumeOnLoad = false
+            startTtsAt(0)
+        }
     }
 
     // 捲動位置 → 進度（1 秒防抖）
@@ -241,6 +323,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             state.syncManager.flush(meta.fingerprint)
         }
         onDispose {
+            ttsController?.stop()
             state.platform.keepScreenOn(false)
             state.readerFlush = null
             val rec = record
@@ -348,7 +431,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
                     ) {
                         items(ch.paragraphs.size) { i ->
-                            val highlighted = highlightParagraph == i
+                            val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
                             Text(
                                 text = ch.paragraphs[i],
                                 style = paragraphStyle,
@@ -419,8 +502,82 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                 }
             }
 
+            // 朗讀控制列（朗讀模式時取代底部 chrome）
+            if (ttsActive && ch != null) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 3.dp,
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = { stopTts() }) { Text("停止") }
+                        IconButton(
+                            onClick = { startTtsAt(ttsParagraph - 1) },
+                            enabled = ttsParagraph > 0,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
+                        }
+                        TextButton(onClick = { if (ttsPlaying) pauseTts() else startTtsAt(ttsParagraph) }) {
+                            Text(if (ttsPlaying) "暫停" else "繼續")
+                        }
+                        IconButton(
+                            onClick = { startTtsAt(ttsParagraph + 1) },
+                            enabled = ttsParagraph < ch.paragraphs.lastIndex,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
+                        }
+                        fun adjustRate(delta: Float) {
+                            val next = ((state.settings.ttsRate + delta) * 10).roundToInt() / 10f
+                            val clamped = next.coerceIn(0.5f, 4f)
+                            state.updateSettings { it.copy(ttsRate = clamped) }
+                            ttsController?.rate = clamped
+                            if (ttsPlaying) startTtsAt(ttsParagraph)
+                        }
+                        TextButton(onClick = { adjustRate(-0.1f) }, enabled = state.settings.ttsRate > 0.5f) {
+                            Text("−")
+                        }
+                        Text(
+                            "%.1fx".format(state.settings.ttsRate),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        TextButton(onClick = { adjustRate(+0.1f) }, enabled = state.settings.ttsRate < 4f) {
+                            Text("＋")
+                        }
+                        Box {
+                            TextButton(onClick = { showTtsVoiceMenu = true }) { Text("語音") }
+                            DropdownMenu(
+                                expanded = showTtsVoiceMenu,
+                                onDismissRequest = { showTtsVoiceMenu = false },
+                            ) {
+                                (ttsVoices ?: emptyList()).forEach { v ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            val selected = v.id == state.settings.ttsVoiceId
+                                            Text(
+                                                (if (selected) "✓ " else "") + "${v.label}（${v.language}）",
+                                                maxLines = 1,
+                                            )
+                                        },
+                                        onClick = {
+                                            showTtsVoiceMenu = false
+                                            state.updateSettings { it.copy(ttsVoiceId = v.id) }
+                                            ttsController?.voiceId = v.id
+                                            if (ttsPlaying) startTtsAt(ttsParagraph)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 底部 chrome
-            if (chromeVisible && ch != null && ld != null) {
+            if (chromeVisible && !ttsActive && ch != null && ld != null) {
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceContainer,
@@ -448,6 +605,11 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         }
                         TextButton(onClick = { showBookmarksSheet = true }) {
                             Text("書籤")
+                        }
+                        if (ttsEngine != null) {
+                            TextButton(onClick = { enterTts() }) {
+                                Text("朗讀")
+                            }
                         }
                         IconButton(onClick = { showSearchOverlay = true }) {
                             Icon(Icons.Filled.Search, contentDescription = "搜尋")
@@ -484,6 +646,27 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
 
     if (showSettingsSheet) {
         ReaderSettingsSheet(state = state, onDismiss = { showSettingsSheet = false })
+    }
+
+    if (showTtsUnavailable) {
+        AlertDialog(
+            onDismissRequest = { showTtsUnavailable = false },
+            confirmButton = {
+                TextButton(onClick = { showTtsUnavailable = false }) { Text("知道了") }
+            },
+            title = { Text("無法朗讀") },
+            text = {
+                Text(
+                    if (state.platform.isDesktop) {
+                        "找不到可用的語音引擎。請確認 Windows 已安裝中文語音" +
+                            "（設定 → 時間與語言 → 語音 → 新增語音）。"
+                    } else {
+                        "找不到可用的語音引擎。請確認裝置已安裝 TTS 語音服務" +
+                            "（如 Google 語音服務）並支援中文。"
+                    }
+                )
+            },
+        )
     }
 
     if (showBookmarksSheet) {

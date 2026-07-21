@@ -45,6 +45,8 @@ interface Platform {
     /** 依 id 解析字體；null 表示用預設字體。實作端應快取已建立的 FontFamily */
     fun resolveFontFamily(id: String?): FontFamily?
     fun keepScreenOn(on: Boolean) {}
+    /** 語音朗讀引擎；null 表示該平台/裝置不支援 */
+    val tts: app.novelreader.tts.TtsEngine? get() = null
     /** 解碼封面圖片位元組（EPUB 封面），失敗回傳 null */
     fun decodeImage(bytes: ByteArray): ImageBitmap?
 }

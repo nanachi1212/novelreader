@@ -65,6 +65,9 @@ data class ReaderSettings(
     val marginHorizontalDp: Int = 24,
     val theme: AppTheme = AppTheme.SYSTEM,
     val s2tEnabled: Boolean = false,
+    // 朗讀（TTS）
+    val ttsRate: Float = 1f,
+    val ttsVoiceId: String? = null,
     val syncFolderUri: String? = null,
     val deviceId: String = "",
     // desktop 視窗狀態
