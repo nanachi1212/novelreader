@@ -43,7 +43,7 @@ object DesktopPlatform : Platform {
     /** SAPI 只在 Windows 可用；其他平台回 null（UI 會隱藏朗讀入口） */
     override val tts: app.novelreader.tts.TtsEngine? by lazy {
         if (System.getProperty("os.name").orEmpty().contains("windows", ignoreCase = true)) {
-            app.novelreader.tts.SapiTtsEngine()
+            app.novelreader.tts.OneCoreTtsEngine()
         } else null
     }
 
