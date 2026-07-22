@@ -10,21 +10,19 @@ Windows + Android 雙平台小說閱讀器（Compose Multiplatform）。專為�
 - **書架管理**：書名搜尋、排序、標籤、閱讀進度、相似書名提示
 - **閱讀輔助**：書籤、全文搜尋、簡繁轉換、文字選取、鍵盤翻頁
 - **進度同步**：可選 Google Drive / Autosync 等同步資料夾，進度與書籤寫入 `_novelreader`
-- **Windows 朗讀**：使用系統 SAPI 語音逐段朗讀，支援語速、語音選擇、暫停/繼續、上下段與自動下一章
-
-目前 Android 版尚未接入 TTS 引擎；朗讀入口只會在平台提供語音引擎時顯示。
+- **系統朗讀**：Windows OneCore 與 Android 系統 TTS 逐段朗讀，支援語速、暫停/繼續與自動下一章
 
 ## 系統支援
 
 - Windows 簡體中文與繁體中文操作系統目前都已驗證可正常啟動、匯入與閱讀
-- Windows 朗讀依賴系統已安裝的 SAPI 語音；中文語音可在 Windows「設定 → 時間與語言 → 語音」新增
-- Android 版支援檔案匯入、閱讀、搜尋、書籤與同步；TTS 朗讀尚未接入
+- Windows 朗讀可使用從 Windows 輔助功能下載的 OneCore 自然語音
+- Android 8.0 以上支援 txt / epub 匯入、閱讀設定、進度保存與系統 TTS 朗讀
 
 ## 使用方式
 
 - **書架**：右下角匯入 txt / epub；桌面版也可匯入 zip / rar / 7z。長按（桌面為長點）書籍卡片可編輯標籤或移除
 - **閱讀畫面**：點畫面中央叫出/收起工具列；工具列有目錄、上下章、書籤、搜尋、朗讀、字體設定（Aa）與更多選項
-- **朗讀**：Windows 版點「朗讀」後可暫停/繼續、上下段、調整語速與切換語音；讀完一章會自動接下一章
+- **朗讀**：點「朗讀」後可暫停/繼續及調整語速；讀完一章會自動接下一章。桌面版另可切換語音與上下段
 - **桌面快捷鍵**：`←`/`→`、`↑`/`↓`、`PgUp`/`PgDn`/`空白鍵` 翻頁或換章，`Ctrl+F` 搜尋，`Esc` 回書架
 
 ## 本機建置（Windows）
@@ -34,13 +32,13 @@ $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot'
 $gradle = 'E:\android-tools\gradle-8.11.1\bin\gradle.bat'
 
 & $gradle :composeApp:run              # 直接執行桌面版
-& $gradle :composeApp:assembleDebug    # Android debug APK
+& $gradle :composeApp:assembleRelease  # Android 正式 APK
 & $gradle :composeApp:desktopTest      # 單元測試
 & $gradle :composeApp:createReleaseDistributable  # Windows 可攜版（免安裝資料夾）
 ```
 
 - 桌面版輸出：`composeApp\build\compose\binaries\main-release\app\NovelReader\NovelReader.exe`
-- APK 輸出：`composeApp\build\outputs\apk\debug\composeApp-debug.apk`
+- APK 輸出：`composeApp\build\outputs\apk\release\composeApp-release.apk`
 
 ## 發版
 
@@ -62,5 +60,5 @@ git push origin main --tags
 - 匯入時把原始檔轉碼成 UTF-8 的 `content.txt` 並記錄章節位元組偏移，
   閱讀時 `RandomAccessFile.seek` 只讀當前章節（LRU 快取 3 章）
 - 每本書的進度與書籤存在本機 `book.json`；同步資料夾只寫 sidecar JSON，不碰原始小說檔
-- Windows 朗讀由 `SapiTtsEngine` 啟動長駐 PowerShell worker，透過 System.Speech.SpeechSynthesizer 控制 SAPI
+- Windows 朗讀使用 OneCore；Android 朗讀使用原生 `android.speech.tts.TextToSpeech`
 - 資料目錄：Windows `%APPDATA%\NovelReader`，Android `filesDir`

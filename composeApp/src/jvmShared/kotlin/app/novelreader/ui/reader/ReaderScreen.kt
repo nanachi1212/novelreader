@@ -101,7 +101,6 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     var highlightParagraph by remember { mutableStateOf<Int?>(null) }
     var chapterJumpText by remember(meta.fingerprint) { mutableStateOf("") }
     var chapterSliderValue by remember(meta.fingerprint) { mutableStateOf(0f) }
-    var ttsContextParagraph by remember { mutableStateOf<Int?>(null) }
     var autoAdvanceArmed by remember { mutableStateOf(false) }
 
     // ---- 朗讀（TTS）----
@@ -518,37 +517,24 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     ) {
                         items(ch.paragraphs.size) { i ->
                             val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
-                            Box(Modifier.fillMaxWidth()) {
+                            state.platform.SecondaryClickArea(
+                                label = "從這裡開始朗讀",
+                                onClick = {
+                                    chromeVisible = false
+                                    startTtsAt(i)
+                                },
+                            ) {
                                 Text(
                                     text = ch.paragraphs[i],
                                     style = paragraphStyle,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .then(state.platform.secondaryClickModifier {
-                                            if (ttsEngine != null) ttsContextParagraph = i
-                                        })
                                         .let {
                                             if (highlighted) {
                                                 it.background(MaterialTheme.colorScheme.primaryContainer)
                                             } else it
                                         },
                                 )
-                                DropdownMenu(
-                                    expanded = ttsContextParagraph == i,
-                                    onDismissRequest = { ttsContextParagraph = null },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("從這裡開始朗讀") },
-                                        onClick = {
-                                            ttsContextParagraph = null
-                                            chromeVisible = false
-                                            scope.launch {
-                                                delay(100)
-                                                startTtsAt(i)
-                                            }
-                                        },
-                                    )
-                                }
                             }
                         }
                         item {
@@ -624,20 +610,24 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TextButton(onClick = { stopTts() }) { Text("停止") }
-                        IconButton(
-                            onClick = { startTtsAt(ttsParagraph - 1) },
-                            enabled = ttsParagraph > 0,
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
+                        if (state.platform.isDesktop) {
+                            IconButton(
+                                onClick = { startTtsAt(ttsParagraph - 1) },
+                                enabled = ttsParagraph > 0,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
+                            }
                         }
                         TextButton(onClick = { if (ttsPlaying) pauseTts() else startTtsAt(ttsParagraph) }) {
                             Text(if (ttsPlaying) "暫停" else "繼續")
                         }
-                        IconButton(
-                            onClick = { startTtsAt(ttsParagraph + 1) },
-                            enabled = ttsParagraph < ch.paragraphs.lastIndex,
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
+                        if (state.platform.isDesktop) {
+                            IconButton(
+                                onClick = { startTtsAt(ttsParagraph + 1) },
+                                enabled = ttsParagraph < ch.paragraphs.lastIndex,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
+                            }
                         }
                         fun adjustRate(delta: Float) {
                             val next = ((state.settings.ttsRate + delta) * 10).roundToInt() / 10f
@@ -656,28 +646,30 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         TextButton(onClick = { adjustRate(+0.1f) }, enabled = state.settings.ttsRate < 4f) {
                             Text("＋")
                         }
-                        Box {
-                            TextButton(onClick = { showTtsVoiceMenu = true }) { Text("語音") }
-                            DropdownMenu(
-                                expanded = showTtsVoiceMenu,
-                                onDismissRequest = { showTtsVoiceMenu = false },
-                            ) {
-                                (ttsVoices ?: emptyList()).forEach { v ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            val selected = v.id == state.settings.ttsVoiceId
-                                            Text(
-                                                (if (selected) "✓ " else "") + "${v.label}（${v.language}）",
-                                                maxLines = 1,
-                                            )
-                                        },
-                                        onClick = {
-                                            showTtsVoiceMenu = false
-                                            state.updateSettings { it.copy(ttsVoiceId = v.id) }
-                                            ttsController?.voiceId = v.id
-                                            if (ttsPlaying) startTtsAt(ttsParagraph)
-                                        },
-                                    )
+                        if (state.platform.isDesktop) {
+                            Box {
+                                TextButton(onClick = { showTtsVoiceMenu = true }) { Text("語音") }
+                                DropdownMenu(
+                                    expanded = showTtsVoiceMenu,
+                                    onDismissRequest = { showTtsVoiceMenu = false },
+                                ) {
+                                    (ttsVoices ?: emptyList()).forEach { v ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                val selected = v.id == state.settings.ttsVoiceId
+                                                Text(
+                                                    (if (selected) "✓ " else "") + "${v.label}（${v.language}）",
+                                                    maxLines = 1,
+                                                )
+                                            },
+                                            onClick = {
+                                                showTtsVoiceMenu = false
+                                                state.updateSettings { it.copy(ttsVoiceId = v.id) }
+                                                ttsController?.voiceId = v.id
+                                                if (ttsPlaying) startTtsAt(ttsParagraph)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -712,39 +704,45 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         ) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一章")
                         }
-                        TextButton(onClick = { showBookmarksSheet = true }) {
-                            Text("書籤")
+                        if (state.platform.isDesktop) {
+                            TextButton(onClick = { showBookmarksSheet = true }) {
+                                Text("書籤")
+                            }
                         }
                         if (ttsEngine != null) {
                             TextButton(onClick = { enterTts() }) {
                                 Text("朗讀")
                             }
                         }
-                        IconButton(onClick = { showSearchOverlay = true }) {
-                            Icon(Icons.Filled.Search, contentDescription = "搜尋")
+                        if (state.platform.isDesktop) {
+                            IconButton(onClick = { showSearchOverlay = true }) {
+                                Icon(Icons.Filled.Search, contentDescription = "搜尋")
+                            }
                         }
                         TextButton(onClick = { showSettingsSheet = true }) {
                             Text("Aa", style = MaterialTheme.typography.titleMedium)
                         }
-                        Box {
-                            IconButton(onClick = { showMoreMenu = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "更多")
-                            }
-                            DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(if (settings.s2tEnabled) "顯示原文（簡體）" else "轉換為繁體") },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        state.updateSettings { it.copy(s2tEnabled = !it.s2tEnabled) }
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("編碼設定") },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        showEncodingDialog = true
-                                    },
-                                )
+                        if (state.platform.isDesktop) {
+                            Box {
+                                IconButton(onClick = { showMoreMenu = true }) {
+                                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                                }
+                                DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (settings.s2tEnabled) "顯示原文（簡體）" else "轉換為繁體") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            state.updateSettings { it.copy(s2tEnabled = !it.s2tEnabled) }
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("編碼設定") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            showEncodingDialog = true
+                                        },
+                                    )
+                                }
                             }
                         }
                     }

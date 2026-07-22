@@ -28,7 +28,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         platform = AndroidPlatform(
             activity = this,
-            launchOpenDocument = { openDocLauncher.launch(arrayOf("*/*")) },
+            launchOpenDocument = {
+                openDocLauncher.launch(arrayOf("text/plain", "application/epub+zip"))
+            },
             launchOpenTree = { openTreeLauncher.launch(null) },
         )
         appState = AppState(platform)
@@ -41,5 +43,10 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // 離開前台時立即保存閱讀進度（JSON 很小，同步寫入可接受）
         runBlocking { appState.flushNow() }
+    }
+
+    override fun onDestroy() {
+        platform.tts.shutdown()
+        super.onDestroy()
     }
 }

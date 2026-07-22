@@ -26,6 +26,10 @@ class AndroidPlatform(
 
     override val appDataDir: File get() = activity.filesDir
 
+    override val tts: app.novelreader.tts.TtsEngine by lazy {
+        app.novelreader.tts.AndroidTtsEngine(activity.applicationContext)
+    }
+
     private var docDeferred: CompletableDeferred<Uri?>? = null
     private var treeDeferred: CompletableDeferred<Uri?>? = null
 
