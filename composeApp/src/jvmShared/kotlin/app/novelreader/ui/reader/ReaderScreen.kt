@@ -53,7 +53,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -64,9 +63,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
@@ -84,7 +81,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalComposeUiApi::class, FlowPreview::class)
+@OptIn(FlowPreview::class)
 @Composable
 fun ReaderScreen(state: AppState, meta: BookMeta) {
     val scope = rememberCoroutineScope()
@@ -205,7 +202,12 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             startIndex = index,
             onParagraph = { i ->
                 ttsParagraph = i
-                if (listState.layoutInfo.visibleItemsInfo.none { it.index == i }) {
+                val layout = listState.layoutInfo
+                val item = layout.visibleItemsInfo.firstOrNull { it.index == i }
+                val fullyVisible = item != null &&
+                    item.offset >= layout.viewportStartOffset &&
+                    item.offset + item.size <= layout.viewportEndOffset
+                if (!fullyVisible) {
                     scope.launch { listState.animateScrollToItem(i) }
                 }
             },
@@ -333,7 +335,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     }
 
     LaunchedEffect(loader, chapter?.index) {
-        snapshotFlow { autoAdvanceArmed && isAtChapterTurnPoint() }
+        snapshotFlow { !ttsActive && autoAdvanceArmed && isAtChapterTurnPoint() }
             .distinctUntilChanged()
             .debounce(200)
             .collect { shouldAdvance ->
@@ -508,8 +510,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                 SelectionContainer {
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        modifier = Modifier.fillMaxSize().padding(
                             horizontal = settings.marginHorizontalDp.dp,
                             vertical = settings.marginVerticalDp.dp,
                         ),
@@ -523,20 +524,9 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                     style = paragraphStyle,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .pointerInput(ttsEngine, i) {
-                                            awaitPointerEventScope {
-                                                while (true) {
-                                                    val event = awaitPointerEvent()
-                                                    if (event.type == PointerEventType.Press &&
-                                                        event.button == PointerButton.Secondary &&
-                                                        ttsEngine != null
-                                                    ) {
-                                                        ttsContextParagraph = i
-                                                        event.changes.forEach { it.consume() }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        .then(state.platform.secondaryClickModifier {
+                                            if (ttsEngine != null) ttsContextParagraph = i
+                                        })
                                         .let {
                                             if (highlighted) {
                                                 it.background(MaterialTheme.colorScheme.primaryContainer)
@@ -552,7 +542,10 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                         onClick = {
                                             ttsContextParagraph = null
                                             chromeVisible = false
-                                            startTtsAt(i)
+                                            scope.launch {
+                                                delay(100)
+                                                startTtsAt(i)
+                                            }
                                         },
                                     )
                                 }

@@ -2,6 +2,11 @@ package app.novelreader.platform
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Typeface
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +53,19 @@ object DesktopPlatform : Platform {
     }
 
     override val archive: ArchiveSupport get() = DesktopArchiveSupport
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    override fun secondaryClickModifier(onClick: () -> Unit): Modifier = Modifier.pointerInput(onClick) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.type == PointerEventType.Press && event.button == PointerButton.Secondary) {
+                    onClick()
+                    event.changes.forEach { it.consume() }
+                }
+            }
+        }
+    }
 
     override suspend fun pickBookFile(): BookSource? = withContext(Dispatchers.Swing) {
         val dialog = FileDialog(null as Frame?, "選擇書籍或壓縮檔（txt / epub / zip / rar / 7z）", FileDialog.LOAD)
