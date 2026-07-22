@@ -1,7 +1,7 @@
 package app.novelreader.platform
 
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import java.io.File
 import java.io.InputStream
@@ -46,11 +46,8 @@ interface Platform {
     /** 依 id 解析字體；null 表示用預設字體。實作端應快取已建立的 FontFamily */
     fun resolveFontFamily(id: String?): FontFamily?
     fun keepScreenOn(on: Boolean) {}
-    /** 桌面滑鼠右鍵選單；觸控平台只顯示內容。 */
-    @Composable
-    fun SecondaryClickArea(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
-        content()
-    }
+    /** 桌面滑鼠右鍵選單；觸控平台維持 no-op。 */
+    fun secondaryClickModifier(label: String, onClick: () -> Unit): Modifier = Modifier
     /** 語音朗讀引擎；null 表示該平台/裝置不支援 */
     val tts: app.novelreader.tts.TtsEngine? get() = null
     /** 壓縮檔匯入支援；null 表示該平台不支援（目前僅桌面版提供） */

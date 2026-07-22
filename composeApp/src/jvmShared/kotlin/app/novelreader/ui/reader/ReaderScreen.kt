@@ -517,25 +517,21 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     ) {
                         items(ch.paragraphs.size) { i ->
                             val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
-                            state.platform.SecondaryClickArea(
-                                label = "從這裡開始朗讀",
-                                onClick = {
-                                    chromeVisible = false
-                                    startTtsAt(i)
-                                },
-                            ) {
-                                Text(
-                                    text = ch.paragraphs[i],
-                                    style = paragraphStyle,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .let {
-                                            if (highlighted) {
-                                                it.background(MaterialTheme.colorScheme.primaryContainer)
-                                            } else it
-                                        },
-                                )
-                            }
+                            Text(
+                                text = ch.paragraphs[i],
+                                style = paragraphStyle,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(state.platform.secondaryClickModifier("從這裡開始朗讀") {
+                                        chromeVisible = false
+                                        startTtsAt(i)
+                                    })
+                                    .let {
+                                        if (highlighted) {
+                                            it.background(MaterialTheme.colorScheme.primaryContainer)
+                                        } else it
+                                    },
+                            )
                         }
                         item {
                             DisableSelection {
