@@ -98,11 +98,18 @@ fun ReaderSettingsSheet(state: AppState, onDismiss: () -> Unit) {
 
             // 邊距
             SliderRow(
-                label = "邊距",
+                label = "左右",
                 valueText = "${settings.marginHorizontalDp}",
                 value = settings.marginHorizontalDp.toFloat(),
                 range = 8f..96f,
                 onChange = { v -> state.updateSettings { it.copy(marginHorizontalDp = v.roundToInt()) } },
+            )
+            SliderRow(
+                label = "上下",
+                valueText = "${settings.marginVerticalDp}",
+                value = settings.marginVerticalDp.toFloat(),
+                range = 8f..120f,
+                onChange = { v -> state.updateSettings { it.copy(marginVerticalDp = v.roundToInt()) } },
             )
 
             Spacer(Modifier.height(8.dp))

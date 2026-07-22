@@ -63,6 +63,7 @@ data class ReaderSettings(
     val fontSizeSp: Float = 19f,
     val lineHeightMult: Float = 1.7f,
     val marginHorizontalDp: Int = 24,
+    val marginVerticalDp: Int = 32,
     val theme: AppTheme = AppTheme.SYSTEM,
     val s2tEnabled: Boolean = false,
     // 朗讀（TTS）

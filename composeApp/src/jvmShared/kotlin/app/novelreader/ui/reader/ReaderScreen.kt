@@ -37,7 +37,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -51,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -61,7 +64,9 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
@@ -75,10 +80,11 @@ import app.novelreader.ui.AppState
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-@OptIn(FlowPreview::class)
+@OptIn(ExperimentalComposeUiApi::class, FlowPreview::class)
 @Composable
 fun ReaderScreen(state: AppState, meta: BookMeta) {
     val scope = rememberCoroutineScope()
@@ -96,6 +102,10 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     var showSearchOverlay by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var highlightParagraph by remember { mutableStateOf<Int?>(null) }
+    var chapterJumpText by remember(meta.fingerprint) { mutableStateOf("") }
+    var chapterSliderValue by remember(meta.fingerprint) { mutableStateOf(0f) }
+    var ttsContextParagraph by remember { mutableStateOf<Int?>(null) }
+    var autoAdvanceArmed by remember { mutableStateOf(false) }
 
     // ---- 朗讀（TTS）----
     val ttsEngine = state.platform.tts
@@ -166,6 +176,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         scope.launch {
             val loaded = ld.load(target)
             chapter = loaded
+            autoAdvanceArmed = false
             val scrollTarget = if (toEnd) loaded.paragraphs.size else paragraph
             pendingScrollTo = scrollTarget
             chapterLoadTick++
@@ -238,18 +249,21 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    fun isAtChapterTurnPoint(): Boolean {
+        val info = listState.layoutInfo
+        val lastVisible = info.visibleItemsInfo.lastOrNull() ?: return false
+        val nextChapterItem = info.totalItemsCount - 1
+        return info.totalItemsCount > 0 && lastVisible.index >= nextChapterItem
+    }
+
     /** 翻到頁尾／頁首時自動接下一章／上一章（上一章從章末開始，銜接翻頁方向） */
     fun pageForward(viewport: Float) {
         val ldNow = loader
         val chNow = chapter
-        val info = listState.layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull()
-        val atBottom = lastVisible != null &&
-            lastVisible.index == info.totalItemsCount - 1 &&
-            lastVisible.offset + lastVisible.size <= info.viewportEndOffset
-        if (atBottom && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
+        if (isAtChapterTurnPoint() && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
             openChapter(chNow.index + 1)
         } else {
+            autoAdvanceArmed = true
             scope.launch { listState.animateScrollBy(viewport * 0.9f) }
         }
     }
@@ -262,6 +276,13 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         } else {
             scope.launch { listState.animateScrollBy(-viewport * 0.9f) }
         }
+    }
+
+    fun jumpToChapter(input: String) {
+        val ldNow = loader ?: return
+        val target = input.trim().toIntOrNull()?.minus(1) ?: return
+        openChapter(target.coerceIn(0, ldNow.chapters.lastIndex))
+        scope.launch { drawerState.close() }
     }
 
     // 開書：載章節索引 + 進度（先讀本機/同步合併），跳到上次位置
@@ -303,6 +324,25 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    // 使用者捲到「下一章」提示露出時自動接下一章；短章初次載入不會自己跳走。
+    LaunchedEffect(loader, chapter?.index) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { if (it) autoAdvanceArmed = true }
+    }
+
+    LaunchedEffect(loader, chapter?.index) {
+        snapshotFlow { autoAdvanceArmed && isAtChapterTurnPoint() }
+            .distinctUntilChanged()
+            .debounce(200)
+            .collect { shouldAdvance ->
+                val ldNow = loader
+                val chNow = chapter
+                if (shouldAdvance && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
+                    openChapter(chNow.index + 1)
+                }
+            }
+    }
+
     // 捲動位置 → 進度（1 秒防抖）
     LaunchedEffect(loader) {
         snapshotFlow { listState.firstVisibleItemIndex }
@@ -339,7 +379,11 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     // TOC 打開時捲到當前章節
     LaunchedEffect(drawerState.isOpen) {
         if (drawerState.isOpen) {
-            chapter?.let { tocListState.scrollToItem(it.index.coerceAtLeast(0)) }
+            chapter?.let {
+                chapterJumpText = "${it.index + 1}"
+                chapterSliderValue = it.index.toFloat()
+                tocListState.scrollToItem(it.index.coerceAtLeast(0))
+            }
         }
     }
 
@@ -358,6 +402,45 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     modifier = Modifier.padding(16.dp),
                 )
                 HorizontalDivider()
+                val chapterCount = ld?.chapters?.size ?: 0
+                if (chapterCount > 0) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = chapterJumpText,
+                                onValueChange = { chapterJumpText = it.filter(Char::isDigit).take(5) },
+                                singleLine = true,
+                                label = { Text("章節") },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = { jumpToChapter(chapterJumpText) }) {
+                                Text("跳轉")
+                            }
+                        }
+                        if (chapterCount > 1) {
+                            Slider(
+                                value = chapterSliderValue.coerceIn(0f, (chapterCount - 1).toFloat()),
+                                onValueChange = {
+                                    chapterSliderValue = it
+                                    chapterJumpText = "${it.roundToInt() + 1}"
+                                },
+                                onValueChangeFinished = {
+                                    openChapter(chapterSliderValue.roundToInt().coerceIn(0, chapterCount - 1))
+                                },
+                                valueRange = 0f..(chapterCount - 1).toFloat(),
+                            )
+                            Text(
+                                "${chapterSliderValue.roundToInt() + 1} / $chapterCount",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
                 LazyColumn(state = tocListState, modifier = Modifier.fillMaxSize()) {
                     items(ld?.chapters?.size ?: 0) { i ->
                         val entry = ld!!.chapters[i]
@@ -426,21 +509,52 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             horizontal = settings.marginHorizontalDp.dp,
-                            vertical = 32.dp,
+                            vertical = settings.marginVerticalDp.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
                     ) {
                         items(ch.paragraphs.size) { i ->
                             val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
-                            Text(
-                                text = ch.paragraphs[i],
-                                style = paragraphStyle,
-                                modifier = Modifier.fillMaxWidth().let {
-                                    if (highlighted) {
-                                        it.background(MaterialTheme.colorScheme.primaryContainer)
-                                    } else it
-                                },
-                            )
+                            Box(Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = ch.paragraphs[i],
+                                    style = paragraphStyle,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pointerInput(ttsEngine, i) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    if (event.type == PointerEventType.Press &&
+                                                        event.button == PointerButton.Secondary &&
+                                                        ttsEngine != null
+                                                    ) {
+                                                        ttsContextParagraph = i
+                                                        event.changes.forEach { it.consume() }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .let {
+                                            if (highlighted) {
+                                                it.background(MaterialTheme.colorScheme.primaryContainer)
+                                            } else it
+                                        },
+                                )
+                                DropdownMenu(
+                                    expanded = ttsContextParagraph == i,
+                                    onDismissRequest = { ttsContextParagraph = null },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("從這裡開始朗讀") },
+                                        onClick = {
+                                            ttsContextParagraph = null
+                                            chromeVisible = false
+                                            startTtsAt(i)
+                                        },
+                                    )
+                                }
+                            }
                         }
                         item {
                             DisableSelection {
