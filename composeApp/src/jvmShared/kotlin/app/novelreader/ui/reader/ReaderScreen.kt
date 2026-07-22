@@ -205,7 +205,9 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             startIndex = index,
             onParagraph = { i ->
                 ttsParagraph = i
-                scope.launch { listState.animateScrollToItem(i) }
+                if (listState.layoutInfo.visibleItemsInfo.none { it.index == i }) {
+                    scope.launch { listState.animateScrollToItem(i) }
+                }
             },
             onChapterDone = {
                 val ldNow = loader
