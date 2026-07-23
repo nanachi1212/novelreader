@@ -281,6 +281,16 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    fun handleTouchZone(x: Float, y: Float, width: Float, height: Float) {
+        val col = (x / width * 3).toInt().coerceIn(0, 2)
+        val row = (y / height * 3).toInt().coerceIn(0, 2)
+        when (settings.touchPageZones[row * 3 + col]) {
+            1 -> pageBackward(height)
+            2 -> pageForward(height)
+            else -> chromeVisible = !chromeVisible
+        }
+    }
+
     fun jumpToChapter(input: String) {
         val ldNow = loader ?: return
         val target = input.trim().toIntOrNull()?.minus(1) ?: return
@@ -361,11 +371,20 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     // 進出畫面：保持螢幕常亮、註冊立即保存 hook（關窗/退出時同步 flush，不等 30 秒防抖）
     DisposableEffect(meta.fingerprint) {
         state.platform.keepScreenOn(true)
+        state.platform.setVolumeKeyHandler { forward ->
+            val height = listState.layoutInfo.viewportSize.height.toFloat()
+            if (height <= 0f) false else {
+                // Android 音量上鍵翻前頁、下鍵翻後頁。
+                if (forward) pageForward(height) else pageBackward(height)
+                true
+            }
+        }
         state.readerFlush = {
             record?.let { state.stores.saveBookData(meta.fingerprint, it) }
             state.syncManager.flush(meta.fingerprint)
         }
         onDispose {
+            state.platform.setVolumeKeyHandler(null)
             ttsController?.stop()
             state.platform.keepScreenOn(false)
             state.readerFlush = null
@@ -489,7 +508,10 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     }
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures { chromeVisible = !chromeVisible }
+                    detectTapGestures { offset ->
+                        if (state.platform.isDesktop) chromeVisible = !chromeVisible
+                        else handleTouchZone(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
+                    }
                 },
         ) {
             if (ld == null || ch == null) {

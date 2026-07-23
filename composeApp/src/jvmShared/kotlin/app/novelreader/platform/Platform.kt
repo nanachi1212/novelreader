@@ -46,6 +46,8 @@ interface Platform {
     /** 依 id 解析字體；null 表示用預設字體。實作端應快取已建立的 FontFamily */
     fun resolveFontFamily(id: String?): FontFamily?
     fun keepScreenOn(on: Boolean) {}
+    /** Android 音量鍵翻頁；其他平台忽略。 */
+    fun setVolumeKeyHandler(handler: ((Boolean) -> Boolean)?) {}
     /** 桌面滑鼠右鍵選單；觸控平台維持 no-op。 */
     fun secondaryClickModifier(label: String, onClick: () -> Unit): Modifier = Modifier
     /** 語音朗讀引擎；null 表示該平台/裝置不支援 */

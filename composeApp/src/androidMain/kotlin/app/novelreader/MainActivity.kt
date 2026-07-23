@@ -45,6 +45,11 @@ class MainActivity : ComponentActivity() {
         runBlocking { appState.flushNow() }
     }
 
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (platform.handleVolumeKey(event.keyCode, event.action)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onDestroy() {
         platform.tts.shutdown()
         super.onDestroy()

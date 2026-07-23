@@ -69,6 +69,8 @@ data class ReaderSettings(
     // 朗讀（TTS）
     val ttsRate: Float = 1f,
     val ttsVoiceId: String? = null,
+    /** Android 九宮格觸控：0 關閉、1 前頁、2 後頁。由左上到右下排列。 */
+    val touchPageZones: List<Int> = List(9) { 0 },
     val syncFolderUri: String? = null,
     val deviceId: String = "",
     // desktop 視窗狀態
