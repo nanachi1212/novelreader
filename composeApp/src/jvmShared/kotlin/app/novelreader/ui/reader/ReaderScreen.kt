@@ -642,24 +642,20 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TextButton(onClick = { stopTts() }) { Text("停止") }
-                        if (state.platform.isDesktop) {
-                            IconButton(
-                                onClick = { startTtsAt(ttsParagraph - 1) },
-                                enabled = ttsParagraph > 0,
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
-                            }
+                        IconButton(
+                            onClick = { startTtsAt(ttsParagraph - 1) },
+                            enabled = ttsParagraph > 0,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
                         }
                         TextButton(onClick = { if (ttsPlaying) pauseTts() else startTtsAt(ttsParagraph) }) {
                             Text(if (ttsPlaying) "暫停" else "繼續")
                         }
-                        if (state.platform.isDesktop) {
-                            IconButton(
-                                onClick = { startTtsAt(ttsParagraph + 1) },
-                                enabled = ttsParagraph < ch.paragraphs.lastIndex,
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
-                            }
+                        IconButton(
+                            onClick = { startTtsAt(ttsParagraph + 1) },
+                            enabled = ttsParagraph < ch.paragraphs.lastIndex,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
                         }
                         fun adjustRate(delta: Float) {
                             val next = ((state.settings.ttsRate + delta) * 10).roundToInt() / 10f
@@ -736,10 +732,8 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         ) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一章")
                         }
-                        if (state.platform.isDesktop) {
-                            TextButton(onClick = { showBookmarksSheet = true }) {
-                                Text("書籤")
-                            }
+                        TextButton(onClick = { showBookmarksSheet = true }) {
+                            Text("書籤")
                         }
                         if (ttsEngine != null) {
                             TextButton(onClick = { enterTts() }) {
