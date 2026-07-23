@@ -1,6 +1,7 @@
 package app.novelreader
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +11,10 @@ import app.novelreader.ui.AppState
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val ACTION_STOP_TTS = "app.novelreader.STOP_TTS"
+    }
 
     private lateinit var platform: AndroidPlatform
     private lateinit var appState: AppState
@@ -37,6 +42,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             App(appState)
         }
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 10)
+        }
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == ACTION_STOP_TTS) platform.tts.stop()
     }
 
     override fun onStop() {

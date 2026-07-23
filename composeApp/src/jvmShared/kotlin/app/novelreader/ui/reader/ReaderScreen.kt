@@ -3,6 +3,7 @@ package app.novelreader.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -512,6 +513,19 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         if (state.platform.isDesktop) chromeVisible = !chromeVisible
                         else handleTouchZone(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
                     }
+                }
+                .pointerInput(Unit) {
+                    var drag = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { drag = 0f },
+                        onHorizontalDrag = { _, amount -> drag += amount },
+                        onDragEnd = {
+                            val viewport = listState.layoutInfo.viewportSize.height.toFloat()
+                            if (kotlin.math.abs(drag) > 96f && viewport > 0f) {
+                                if (drag < 0f) pageForward(viewport) else pageBackward(viewport)
+                            }
+                        },
+                    )
                 },
         ) {
             if (ld == null || ch == null) {
@@ -732,10 +746,8 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 Text("朗讀")
                             }
                         }
-                        if (state.platform.isDesktop) {
-                            IconButton(onClick = { showSearchOverlay = true }) {
-                                Icon(Icons.Filled.Search, contentDescription = "搜尋")
-                            }
+                        IconButton(onClick = { showSearchOverlay = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "搜尋")
                         }
                         TextButton(onClick = { showSettingsSheet = true }) {
                             Text("Aa", style = MaterialTheme.typography.titleMedium)
