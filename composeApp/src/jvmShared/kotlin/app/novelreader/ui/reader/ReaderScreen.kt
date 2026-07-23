@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -73,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import app.novelreader.core.convert.ChineseConvert
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.SyncRecord
+import app.novelreader.core.model.ReadingDirection
 import app.novelreader.reader.ChapterLoader
 import app.novelreader.ui.AppState
 import kotlinx.coroutines.FlowPreview
@@ -272,6 +275,12 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    fun viewportLength(): Float = if (settings.readingDirection == ReadingDirection.HORIZONTAL) {
+        listState.layoutInfo.viewportSize.width.toFloat()
+    } else {
+        listState.layoutInfo.viewportSize.height.toFloat()
+    }
+
     fun pageBackward(viewport: Float) {
         val chNow = chapter
         val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
@@ -286,8 +295,8 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         val col = (x / width * 3).toInt().coerceIn(0, 2)
         val row = (y / height * 3).toInt().coerceIn(0, 2)
         when (settings.touchPageZones[row * 3 + col]) {
-            1 -> pageBackward(height)
-            2 -> pageForward(height)
+            1 -> pageBackward(viewportLength())
+            2 -> pageForward(viewportLength())
             else -> chromeVisible = !chromeVisible
         }
     }
@@ -373,10 +382,10 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     DisposableEffect(meta.fingerprint) {
         state.platform.keepScreenOn(true)
         state.platform.setVolumeKeyHandler { forward ->
-            val height = listState.layoutInfo.viewportSize.height.toFloat()
-            if (height <= 0f) false else {
+            val viewport = viewportLength()
+            if (viewport <= 0f) false else {
                 // Android 音量上鍵翻前頁、下鍵翻後頁。
-                if (forward) pageForward(height) else pageBackward(height)
+                if (forward) pageForward(viewport) else pageBackward(viewport)
                 true
             }
         }
@@ -491,7 +500,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                 .focusTarget()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val viewport = listState.layoutInfo.viewportSize.height.toFloat()
+                    val viewport = viewportLength()
                     when (event.key) {
                         Key.DirectionRight, Key.DirectionDown, Key.PageDown, Key.Spacebar -> {
                             pageForward(viewport); true
@@ -520,7 +529,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         onDragStart = { drag = 0f },
                         onHorizontalDrag = { _, amount -> drag += amount },
                         onDragEnd = {
-                            val viewport = listState.layoutInfo.viewportSize.height.toFloat()
+                            val viewport = viewportLength()
                             if (kotlin.math.abs(drag) > 96f && viewport > 0f) {
                                 if (drag < 0f) pageForward(viewport) else pageBackward(viewport)
                             }
@@ -542,15 +551,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
 
-                SelectionContainer {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize().padding(
-                            horizontal = settings.marginHorizontalDp.dp,
-                            vertical = settings.marginVerticalDp.dp,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
-                    ) {
+                val itemsContent: LazyListScope.() -> Unit = {
                         items(ch.paragraphs.size) { i ->
                             val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
                             Text(
@@ -589,6 +590,30 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 }
                             }
                         }
+                }
+                SelectionContainer {
+                    if (settings.readingDirection == ReadingDirection.HORIZONTAL) {
+                        LazyRow(
+                            state = listState,
+                            userScrollEnabled = settings.readingMode == app.novelreader.core.model.ReadingMode.CONTINUOUS,
+                            modifier = Modifier.fillMaxSize().padding(
+                                horizontal = settings.marginHorizontalDp.dp,
+                                vertical = settings.marginVerticalDp.dp,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            content = itemsContent,
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            userScrollEnabled = settings.readingMode == app.novelreader.core.model.ReadingMode.CONTINUOUS,
+                            modifier = Modifier.fillMaxSize().padding(
+                                horizontal = settings.marginHorizontalDp.dp,
+                                vertical = settings.marginVerticalDp.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            content = itemsContent,
+                        )
                     }
                 }
             }

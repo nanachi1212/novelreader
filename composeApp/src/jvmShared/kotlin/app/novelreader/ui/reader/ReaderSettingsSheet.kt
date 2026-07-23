@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.novelreader.core.model.AppTheme
+import app.novelreader.core.model.ReadingDirection
+import app.novelreader.core.model.ReadingMode
 import app.novelreader.ui.AppState
 import kotlin.math.roundToInt
 
@@ -143,6 +145,36 @@ fun ReaderSettingsSheet(state: AppState, onDismiss: () -> Unit) {
                 }
             }
 
+            Spacer(Modifier.height(8.dp))
+
+            SettingLabel("閱讀模式")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(
+                    ReadingMode.CONTINUOUS to "連續滾動",
+                    ReadingMode.PAGED to "分頁",
+                ).forEachIndexed { i, (mode, label) ->
+                    SegmentedButton(
+                        selected = settings.readingMode == mode,
+                        onClick = { state.updateSettings { it.copy(readingMode = mode) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
+                    ) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            SettingLabel("閱讀方向")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(
+                    ReadingDirection.VERTICAL to "直向",
+                    ReadingDirection.HORIZONTAL to "橫向",
+                ).forEachIndexed { i, (direction, label) ->
+                    SegmentedButton(
+                        selected = settings.readingDirection == direction,
+                        onClick = { state.updateSettings { it.copy(readingDirection = direction) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
+                    ) { Text(label) }
+                }
+            }
             Spacer(Modifier.height(8.dp))
 
             // 主題
