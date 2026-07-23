@@ -114,38 +114,39 @@ fun ReaderSettingsSheet(state: AppState, onDismiss: () -> Unit) {
                 onChange = { v -> state.updateSettings { it.copy(marginVerticalDp = v.roundToInt()) } },
             )
 
-            SettingLabel("觸控翻頁（九宮格）")
-            Text(
-                "點選格子循環：關閉 → 前頁 → 後頁",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Column {
-                repeat(3) { row ->
-                    Row(Modifier.fillMaxWidth()) {
-                        repeat(3) { col ->
-                            val index = row * 3 + col
-                            val action = settings.touchPageZones.getOrElse(index) { 0 }
-                            OutlinedButton(
-                                onClick = {
-                                    state.updateSettings {
-                                        val zones = it.touchPageZones.toMutableList().apply {
-                                            while (size < 9) add(0)
-                                            this[index] = (action + 1) % 3
+            if (!state.platform.isDesktop) {
+                SettingLabel("觸控翻頁（九宮格）")
+                Text(
+                    "點選格子循環：關閉 → 前頁 → 後頁",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column {
+                    repeat(3) { row ->
+                        Row(Modifier.fillMaxWidth()) {
+                            repeat(3) { col ->
+                                val index = row * 3 + col
+                                val action = settings.touchPageZones.getOrElse(index) { 0 }
+                                OutlinedButton(
+                                    onClick = {
+                                        state.updateSettings {
+                                            val zones = it.touchPageZones.toMutableList().apply {
+                                                while (size < 9) add(0)
+                                                this[index] = (action + 1) % 3
+                                            }
+                                            it.copy(touchPageZones = zones)
                                         }
-                                        it.copy(touchPageZones = zones)
-                                    }
-                                },
-                                modifier = Modifier.weight(1f).padding(2.dp),
-                            ) {
-                                Text(listOf("", "前頁", "後頁")[action])
+                                    },
+                                    modifier = Modifier.weight(1f).padding(2.dp),
+                                ) {
+                                    Text(listOf("", "前頁", "後頁")[action])
+                                }
                             }
                         }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
             }
-
-            Spacer(Modifier.height(8.dp))
 
             SettingLabel("閱讀模式")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
