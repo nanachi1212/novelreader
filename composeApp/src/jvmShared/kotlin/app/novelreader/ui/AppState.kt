@@ -51,7 +51,7 @@ class AppState(val platform: Platform) {
     suspend fun init() {
         if (initialized) return
         settings = stores.loadSettings()
-        library = stores.loadLibrary()
+        library = stores.repairLibrary()
         syncFolderUri = settings.syncFolderUri
         initialized = true
         scope.launch(Dispatchers.IO) { ChineseConvert.warmUp() }

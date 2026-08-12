@@ -50,6 +50,25 @@ class AppStores(private val platform: Platform) {
         mutex.withLock { writeJson(libraryFile, library) }
     }
 
+    /**
+     * 修復書庫與磁碟內容不一致的狀態。常見原因是匯入途中斷電或程序被終止。
+     * 只移除缺少必要內容的紀錄與孤立資料夾，不碰仍可開啟的書。
+     */
+    suspend fun repairLibrary(): Library = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val library = readJson<Library>(libraryFile) ?: Library()
+            val valid = library.books.filter { meta ->
+                contentFile(meta.fingerprint).isFile && chaptersFile(meta.fingerprint).isFile
+            }
+            val validIds = valid.mapTo(HashSet()) { it.fingerprint }
+            File(root, "books").listFiles()?.filter { it.isDirectory && it.name !in validIds }?.forEach {
+                it.deleteRecursively()
+            }
+            if (valid.size != library.books.size) writeJson(libraryFile, Library(valid))
+            Library(valid)
+        }
+    }
+
     // ---- settings ----
 
     suspend fun loadSettings(): ReaderSettings = withContext(Dispatchers.IO) {
@@ -113,23 +132,43 @@ class AppStores(private val platform: Platform) {
     // ---- helpers ----
 
     private inline fun <reified T> readJson(file: File): T? {
-        if (!file.isFile) return null
-        return try {
+        decodeJson<T>(file)?.let { return it }
+        val backup = File(file.parentFile, file.name + ".bak")
+        return decodeJson<T>(backup)?.also { recovered ->
+            val tmp = File(file.parentFile, file.name + ".recovered.tmp")
+            tmp.writeText(json.encodeToString(recovered), Charsets.UTF_8)
+            java.nio.file.Files.move(
+                tmp.toPath(), file.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+        }
+    }
+
+    private inline fun <reified T> decodeJson(file: File): T? =
+        if (!file.isFile) null else try {
             json.decodeFromString<T>(file.readText(Charsets.UTF_8))
         } catch (_: Exception) {
             null
         }
-    }
 
     private inline fun <reified T> writeJson(file: File, value: T) {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(json.encodeToString(value), Charsets.UTF_8)
-        if (file.exists()) file.delete()
-        if (!tmp.renameTo(file)) {
+        val backup = File(file.parentFile, file.name + ".bak")
+        if (file.isFile) java.nio.file.Files.copy(
+            file.toPath(), backup.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+        try {
             java.nio.file.Files.move(
                 tmp.toPath(), file.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING
             )
         }
     }

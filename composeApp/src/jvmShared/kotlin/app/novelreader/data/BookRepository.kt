@@ -34,12 +34,14 @@ class BookRepository(
         title.trim().lowercase().replace(Regex("""[\s　]+"""), "")
 
     fun import(source: BookSource, forcedCharsetName: String? = null): Flow<ImportState> = channelFlow {
+        var newFingerprint: String? = null
         try {
             send(ImportState.Progress(0f))
             val fingerprint = Fingerprint.compute(source)
 
             val library = stores.loadLibrary()
             val existing = library.books.find { it.fingerprint == fingerprint }
+            if (existing == null) newFingerprint = fingerprint
             if (existing != null && forcedCharsetName == null) {
                 send(ImportState.Done(existing, alreadyExisted = true))
                 return@channelFlow
@@ -86,6 +88,7 @@ class BookRepository(
             }
             send(ImportState.Done(meta, alreadyExisted = false, possibleDuplicateOf = duplicate))
         } catch (e: Exception) {
+            newFingerprint?.let { stores.deleteBook(it) }
             send(ImportState.Error(e.message ?: e.toString()))
         }
     }.flowOn(Dispatchers.IO)
