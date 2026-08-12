@@ -17,11 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,6 +46,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.novelreader.generated.resources.Res
+import app.novelreader.generated.resources.icon_add
+import app.novelreader.generated.resources.icon_close
+import app.novelreader.generated.resources.icon_search
+import app.novelreader.generated.resources.icon_settings
+import org.jetbrains.compose.resources.vectorResource
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.ReadingProgress
 import app.novelreader.data.BookRepository.ImportState
@@ -233,7 +234,7 @@ fun BookshelfScreen(state: AppState) {
                             }
                         }
                         IconButton(onClick = { state.screen = Screen.Settings }) {
-                            Icon(Icons.Filled.Settings, contentDescription = "設定")
+                            Icon(vectorResource(Res.drawable.icon_settings), contentDescription = "設定")
                         }
                     },
                 )
@@ -243,9 +244,9 @@ fun BookshelfScreen(state: AppState) {
                         onValueChange = { searchQuery = it },
                         singleLine = true,
                         placeholder = { Text("搜尋書名…") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        leadingIcon = { Icon(vectorResource(Res.drawable.icon_search), contentDescription = null) },
                         trailingIcon = if (searchQuery.isNotEmpty()) {
-                            { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Close, contentDescription = "清除") } }
+                            { IconButton(onClick = { searchQuery = "" }) { Icon(vectorResource(Res.drawable.icon_close), contentDescription = "清除") } }
                         } else null,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     )
@@ -277,7 +278,7 @@ fun BookshelfScreen(state: AppState) {
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { startImport() },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(vectorResource(Res.drawable.icon_add), contentDescription = null) },
                 text = { Text("匯入書籍") },
             )
         },

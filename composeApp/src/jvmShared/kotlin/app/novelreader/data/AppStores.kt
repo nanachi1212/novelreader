@@ -52,17 +52,14 @@ class AppStores(private val platform: Platform) {
 
     /**
      * 修復書庫與磁碟內容不一致的狀態。常見原因是匯入途中斷電或程序被終止。
-     * 只移除缺少必要內容的紀錄與孤立資料夾，不碰仍可開啟的書。
+     * 只移除缺少必要內容的書庫紀錄。孤立資料夾可能來自較新的匯入、而
+     * library.json 正由舊備份恢復，因此必須保留，避免修復程序造成二次資料遺失。
      */
     suspend fun repairLibrary(): Library = withContext(Dispatchers.IO) {
         mutex.withLock {
             val library = readJson<Library>(libraryFile) ?: Library()
             val valid = library.books.filter { meta ->
                 contentFile(meta.fingerprint).isFile && chaptersFile(meta.fingerprint).isFile
-            }
-            val validIds = valid.mapTo(HashSet()) { it.fingerprint }
-            File(root, "books").listFiles()?.filter { it.isDirectory && it.name !in validIds }?.forEach {
-                it.deleteRecursively()
             }
             if (valid.size != library.books.size) writeJson(libraryFile, Library(valid))
             Library(valid)
@@ -89,18 +86,18 @@ class AppStores(private val platform: Platform) {
     // ---- 章節索引 ----
 
     suspend fun loadChapters(fingerprint: String): List<ChapterIndexEntry>? =
-        withContext(Dispatchers.IO) { readJson(chaptersFile(fingerprint)) }
+        withContext(Dispatchers.IO) { mutex.withLock { readJson(chaptersFile(fingerprint)) } }
 
     suspend fun saveChapters(fingerprint: String, chapters: List<ChapterIndexEntry>) =
-        withContext(Dispatchers.IO) { writeJson(chaptersFile(fingerprint), chapters) }
+        withContext(Dispatchers.IO) { mutex.withLock { writeJson(chaptersFile(fingerprint), chapters) } }
 
     // ---- 每書進度 + 書籤 ----
 
     suspend fun loadBookData(fingerprint: String): SyncRecord? =
-        withContext(Dispatchers.IO) { readJson(bookDataFile(fingerprint)) }
+        withContext(Dispatchers.IO) { mutex.withLock { readJson(bookDataFile(fingerprint)) } }
 
     suspend fun saveBookData(fingerprint: String, record: SyncRecord) =
-        withContext(Dispatchers.IO) { writeJson(bookDataFile(fingerprint), record) }
+        withContext(Dispatchers.IO) { mutex.withLock { writeJson(bookDataFile(fingerprint), record) } }
 
     fun defaultBookData(fingerprint: String): SyncRecord =
         SyncRecord(progress = ReadingProgress(fingerprint = fingerprint))
@@ -137,18 +134,17 @@ class AppStores(private val platform: Platform) {
         return decodeJson<T>(backup)?.also { recovered ->
             val tmp = File(file.parentFile, file.name + ".recovered.tmp")
             tmp.writeText(json.encodeToString(recovered), Charsets.UTF_8)
-            java.nio.file.Files.move(
-                tmp.toPath(), file.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-            )
+            moveReplacing(tmp, file)
         }
     }
 
     private inline fun <reified T> decodeJson(file: File): T? =
         if (!file.isFile) null else try {
             json.decodeFromString<T>(file.readText(Charsets.UTF_8))
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            val corrupt = File(file.parentFile, file.name + ".corrupt")
+            runCatching { file.copyTo(corrupt, overwrite = true) }
+            System.err.println("NovelReader 無法讀取 ${file.absolutePath}，已保留損壞副本：${error.message}")
             null
         }
 
@@ -160,15 +156,19 @@ class AppStores(private val platform: Platform) {
         if (file.isFile) java.nio.file.Files.copy(
             file.toPath(), backup.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING
         )
+        moveReplacing(tmp, file)
+    }
+
+    private fun moveReplacing(source: File, target: File) {
         try {
             java.nio.file.Files.move(
-                tmp.toPath(), file.toPath(),
+                source.toPath(), target.toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE,
             )
         } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
             java.nio.file.Files.move(
-                tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING
             )
         }
     }

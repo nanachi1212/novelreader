@@ -3,7 +3,7 @@ package app.novelreader.platform
 import app.novelreader.core.detect.CharsetDetector
 import com.github.junrar.Archive
 import com.github.junrar.exception.RarException
-import com.github.junrar.exception.UnsupportedRarV5Exception
+import com.github.junrar.exception.UnsupportedRarVersionException
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipFile
@@ -139,7 +139,7 @@ object DesktopArchiveSupport : ArchiveSupport {
         }
     }
 
-    // ---- rar（junrar，僅 RAR4） ----
+    // ---- rar（junrar） ----
 
     private fun <T> withRar(f: File, block: (Archive) -> T): T = try {
         Archive(f).use { archive ->
@@ -148,8 +148,8 @@ object DesktopArchiveSupport : ArchiveSupport {
             }
             block(archive)
         }
-    } catch (e: UnsupportedRarV5Exception) {
-        throw ArchiveException("RAR5 格式不支援，請改用 zip / 7z 重新壓縮，或先解壓縮後再匯入單檔", e)
+    } catch (e: UnsupportedRarVersionException) {
+        throw ArchiveException("此 RAR 版本不支援，請改用 zip / 7z 重新壓縮，或先解壓縮後再匯入單檔", e)
     } catch (e: ArchiveException) {
         throw e
     } catch (e: RarException) {

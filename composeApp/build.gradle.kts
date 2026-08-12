@@ -20,8 +20,7 @@ kotlin {
                 implementation(compose.foundation)
                 implementation(compose.material3)
                 implementation(compose.ui)
-                // CMP 1.9 起 material3 不再帶 icons，需另外引用（最後的多平台版本是 1.7.3）
-                implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
+                implementation(libs.compose.resources)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
             }
@@ -71,17 +70,15 @@ android {
         applicationId = "app.novelreader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.3.8"
+        versionCode = 16
+        versionName = "1.3.9"
     }
 
     signingConfigs {
         create("release") {
             val ksFile = rootProject.file("keystore/novelreader-release.jks")
-            if (ksFile.exists()) {
-                // CI 未設 secret 時環境變數是空字串而非 null，需一併視為未設定
-                val ksPass = System.getenv("KEYSTORE_PASSWORD")
-                    .takeUnless { it.isNullOrBlank() } ?: "novelreader"
+            val ksPass = System.getenv("KEYSTORE_PASSWORD").takeUnless { it.isNullOrBlank() }
+            if (ksFile.exists() && ksPass != null) {
                 storeFile = ksFile
                 storePassword = ksPass
                 keyAlias = "novelreader"
@@ -94,7 +91,9 @@ android {
         release {
             // opencc4j 依賴資源檔字典，先不開 minify 以免被剝離
             isMinifyEnabled = false
-            if (rootProject.file("keystore/novelreader-release.jks").exists()) {
+            if (rootProject.file("keystore/novelreader-release.jks").exists() &&
+                !System.getenv("KEYSTORE_PASSWORD").isNullOrBlank()
+            ) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -131,7 +130,7 @@ compose.desktop {
             outputBaseDir.set(layout.buildDirectory.dir("native-dist"))
             targetFormats(TargetFormat.Msi)
             packageName = "NovelReader"
-            packageVersion = "1.3.8"
+            packageVersion = "1.3.9"
             // jlink 只靜態分析 bytecode 偵測所需模組，Charset.forName() 是執行期字串查找，
             // 偵測不到 jdk.charsets（Big5/GBK 都在這個模組，只有 GB18030 內建在 java.base），
             // 必須手動加，不然打包版永遠無法真正使用 Big5/GBK
@@ -141,6 +140,10 @@ compose.desktop {
             }
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "app.novelreader.generated.resources"
 }
 
 // 產生可直接複製到隨身碟使用的免安裝資料夾：release/NovelReader/NovelReader.exe（路徑淺、資料夾裡沒有多餘雜物）

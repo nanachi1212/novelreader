@@ -182,8 +182,19 @@ class DesktopSyncFolder(private val root: File) : SyncFolder {
         val tmp = File(dir, "$name.tmp")
         tmp.writeBytes(bytes)
         val target = File(dir, name)
-        if (target.exists()) target.delete()
-        tmp.renameTo(target)
+        try {
+            java.nio.file.Files.move(
+                tmp.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                tmp.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+        true
     } catch (_: Exception) {
         false
     }

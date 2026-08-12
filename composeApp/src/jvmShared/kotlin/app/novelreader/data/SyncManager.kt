@@ -23,7 +23,7 @@ class SyncManager(
         flushJobs[fingerprint] = scope.launch(Dispatchers.IO) {
             delay(debounceMs)
             flush(fingerprint)
-            flushJobs.remove(fingerprint)
+            flushJobs.remove(fingerprint, coroutineContext[Job])
         }
     }
 
@@ -33,10 +33,10 @@ class SyncManager(
         withContext(Dispatchers.IO) {
             // 讀本機副本 + 同步 sidecar
             val stored = stores.loadBookData(fingerprint) ?: stores.defaultBookData(fingerprint)
+            val folder = syncFolder()
             val remote = try {
-                val folder = syncFolder() ?: return@withContext
-                val bytes = folder.read("$fingerprint.json") ?: return@withContext
-                stores.json.decodeFromString<SyncRecord>(String(bytes, Charsets.UTF_8))
+                val bytes = folder?.read("$fingerprint.json")
+                if (bytes == null) null else stores.json.decodeFromString<SyncRecord>(String(bytes, Charsets.UTF_8))
             } catch (_: Exception) {
                 null
             }
@@ -52,13 +52,12 @@ class SyncManager(
 
             // 寫同步 sidecar（失敗靜默）
             try {
-                val folder = syncFolder() ?: return@withContext
                 val json = stores.json.encodeToString(SyncRecord.serializer(), merged)
-                folder.write("$fingerprint.json", json.toByteArray(Charsets.UTF_8))
+                folder?.write("$fingerprint.json", json.toByteArray(Charsets.UTF_8))
             } catch (_: Exception) {
             }
 
-            pending.remove(fingerprint)
+            pending.remove(fingerprint, local)
         }
     }
 

@@ -86,11 +86,9 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
 
     private fun showNotification() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                notifications.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "朗讀", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            notifications.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "朗讀", NotificationManager.IMPORTANCE_LOW)
+            )
             val intent = Intent(appContext, MainActivity::class.java).apply {
                 action = MainActivity.ACTION_STOP_TTS
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP

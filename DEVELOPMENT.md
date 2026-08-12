@@ -16,6 +16,6 @@ Kotlin 2.2；Compose Multiplatform；Gradle 8.11；JDK 17
 
 ## 啟動／驗證
 
-設定 JAVA_HOME 後執行 Gradle :composeApp:run；測試 desktopTest
+設定 JDK 17 的 `JAVA_HOME` 後執行 `.\gradlew.bat :composeApp:run`；測試使用 `.\gradlew.bat desktopTest`。Wrapper 已鎖定 Gradle 8.11.1，不需要另外安裝 Gradle。
 
 若實際版本與 README 不同，以鎖定檔、build 設定與當前錯誤訊息為準。

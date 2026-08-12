@@ -11,9 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.novelreader.core.model.Bookmark
+import app.novelreader.generated.resources.Res
+import app.novelreader.generated.resources.icon_add
+import app.novelreader.generated.resources.icon_delete
+import org.jetbrains.compose.resources.vectorResource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,7 +76,7 @@ fun BookmarksSheet(
                         )
                     },
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.height(18.dp))
+                    Icon(vectorResource(Res.drawable.icon_add), contentDescription = null, modifier = Modifier.height(18.dp))
                     Text("加入目前位置")
                 }
             }
@@ -111,7 +112,7 @@ fun BookmarksSheet(
                                 )
                             }
                             IconButton(onClick = { onDelete(bm) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "刪除書籤")
+                                Icon(vectorResource(Res.drawable.icon_delete), contentDescription = "刪除書籤")
                             }
                         }
                         HorizontalDivider()

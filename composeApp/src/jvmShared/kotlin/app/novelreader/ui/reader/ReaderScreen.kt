@@ -21,13 +21,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -71,6 +64,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import app.novelreader.generated.resources.Res
+import app.novelreader.generated.resources.icon_arrow_back
+import app.novelreader.generated.resources.icon_arrow_left
+import app.novelreader.generated.resources.icon_arrow_right
+import app.novelreader.generated.resources.icon_list
+import app.novelreader.generated.resources.icon_more_vert
+import app.novelreader.generated.resources.icon_search
+import org.jetbrains.compose.resources.vectorResource
 import androidx.compose.ui.unit.sp
 import app.novelreader.core.convert.ChineseConvert
 import app.novelreader.core.model.BookMeta
@@ -630,7 +631,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { state.backToShelf() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回書架")
+                            Icon(vectorResource(Res.drawable.icon_arrow_back), contentDescription = "返回書架")
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -671,7 +672,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             onClick = { startTtsAt(ttsParagraph - 1) },
                             enabled = ttsParagraph > 0,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
+                            Icon(vectorResource(Res.drawable.icon_arrow_left), contentDescription = "上一段")
                         }
                         TextButton(onClick = { if (ttsPlaying) pauseTts() else startTtsAt(ttsParagraph) }) {
                             Text(if (ttsPlaying) "暫停" else "繼續")
@@ -680,7 +681,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             onClick = { startTtsAt(ttsParagraph + 1) },
                             enabled = ttsParagraph < ch.paragraphs.lastIndex,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
+                            Icon(vectorResource(Res.drawable.icon_arrow_right), contentDescription = "下一段")
                         }
                         fun adjustRate(delta: Float) {
                             val next = ((state.settings.ttsRate + delta) * 10).roundToInt() / 10f
@@ -743,19 +744,19 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目錄")
+                            Icon(vectorResource(Res.drawable.icon_list), contentDescription = "目錄")
                         }
                         IconButton(
                             onClick = { openChapter(ch.index - 1) },
                             enabled = ch.index > 0,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一章")
+                            Icon(vectorResource(Res.drawable.icon_arrow_left), contentDescription = "上一章")
                         }
                         IconButton(
                             onClick = { openChapter(ch.index + 1) },
                             enabled = ch.index < ld.chapters.lastIndex,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一章")
+                            Icon(vectorResource(Res.drawable.icon_arrow_right), contentDescription = "下一章")
                         }
                         TextButton(onClick = { showBookmarksSheet = true }) {
                             Text("書籤")
@@ -766,7 +767,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             }
                         }
                         IconButton(onClick = { showSearchOverlay = true }) {
-                            Icon(Icons.Filled.Search, contentDescription = "搜尋")
+                            Icon(vectorResource(Res.drawable.icon_search), contentDescription = "搜尋")
                         }
                         TextButton(onClick = { showSettingsSheet = true }) {
                             Text("Aa", style = MaterialTheme.typography.titleMedium)
@@ -774,7 +775,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         if (state.platform.isDesktop) {
                             Box {
                                 IconButton(onClick = { showMoreMenu = true }) {
-                                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                                    Icon(vectorResource(Res.drawable.icon_more_vert), contentDescription = "更多")
                                 }
                                 DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
                                     DropdownMenuItem(

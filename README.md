@@ -33,12 +33,11 @@ Windows + Android 雙平台小說閱讀器（Compose Multiplatform）。專為�
 
 ```powershell
 $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot'
-$gradle = 'E:\android-tools\gradle-8.11.1\bin\gradle.bat'
 
-& $gradle :composeApp:run              # 直接執行桌面版
-& $gradle :composeApp:assembleRelease  # Android 正式 APK
-& $gradle :composeApp:desktopTest      # 單元測試
-& $gradle :composeApp:createReleaseDistributable  # Windows 可攜版（免安裝資料夾）
+.\gradlew.bat :composeApp:run              # 直接執行桌面版
+.\gradlew.bat :composeApp:assembleRelease  # Android 正式 APK
+.\gradlew.bat :composeApp:desktopTest      # 單元測試
+.\gradlew.bat :composeApp:createReleaseDistributable  # Windows 可攜版（免安裝資料夾）
 ```
 
 - 桌面版輸出：`composeApp\build\compose\binaries\main-release\app\NovelReader\NovelReader.exe`
@@ -58,7 +57,7 @@ git push origin main --tags
 
 ## 技術備忘
 
-- Kotlin 2.2.20 + Compose Multiplatform 1.9.0 + AGP 8.7.3（Gradle 8.11.1 / JDK 17）
+- Kotlin 2.2.21 + Compose Multiplatform 1.9.0 + AGP 8.10.1（Gradle 8.11.1 / JDK 17）
 - 共用程式碼在 `composeApp/src/jvmShared/kotlin`，以 srcDir 同時掛進 androidMain 與
   desktopMain（兩邊都是 JVM，可直接用 java.io；避開中間 source set 不能用 JDK 的限制）
 - 匯入時把原始檔轉碼成 UTF-8 的 `content.txt` 並記錄章節位元組偏移，

@@ -23,3 +23,9 @@
 - 中斷的新書匯入不留下可見或孤立的書籍資料夾。
 - 啟動時書庫不包含缺少 `content.txt` 或 `chapters.json` 的項目。
 - 現有閱讀功能測試保持通過，且能產出 Windows 可攜版。
+
+## 後續技術債：AGP 9
+
+目前 `composeApp` 同時是 Kotlin Multiplatform 共用模組與 Android application。AGP 9 不再允許 `org.jetbrains.kotlin.multiplatform` 與 `com.android.application` 共用同一 Gradle 模組，因此不能只更新版本號。
+
+後續 migration 應拆成獨立 Android app module，將共用模組改用 `com.android.kotlin.multiplatform.library`，再一起升級 Gradle 9.1+、Compose Multiplatform 1.10+、相容的 Kotlin／serialization 與 compileSdk 36.1。完成模組拆分前保留 AGP 8.10.1；不使用即將在 AGP 10 移除的 legacy opt-out 作為長期方案。
