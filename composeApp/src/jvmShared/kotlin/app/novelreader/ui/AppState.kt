@@ -79,11 +79,15 @@ class AppState(val platform: Platform) {
         screen = Screen.Bookshelf
     }
 
-    fun removeBook(meta: BookMeta) {
+    fun removeBook(meta: BookMeta) = removeBooks(listOf(meta))
+
+    /** 批次移除：N 個書籍資料夾刪除後只寫一次 library.json */
+    fun removeBooks(metas: List<BookMeta>) {
+        val gone = metas.mapTo(HashSet()) { it.fingerprint }
         scope.launch {
-            stores.deleteBook(meta.fingerprint)
+            for (fp in gone) stores.deleteBook(fp)
             val lib = stores.loadLibrary()
-            stores.saveLibrary(lib.copy(books = lib.books.filterNot { it.fingerprint == meta.fingerprint }))
+            stores.saveLibrary(lib.copy(books = lib.books.filterNot { it.fingerprint in gone }))
             refreshLibrary()
         }
     }

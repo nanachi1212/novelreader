@@ -22,6 +22,9 @@ Windows + Android 雙平台小說閱讀器（Compose Multiplatform）。專為�
 ## 使用方式
 
 - **書架**：右下角匯入 txt / epub；桌面版也可匯入 zip / rar / 7z。長按（桌面為長點）書籍卡片可編輯標籤或移除
+- **匯入資料夾（桌面）**：右下角「匯入資料夾」會連同子資料夾一起掃描 txt / epub，勾選後批次匯入；
+  第一層子資料夾名（例如 `小說\01武俠小說\`）會自動變成該書的標籤，書架上點標籤即可按資料夾分類瀏覽
+- **批次移除**：書架右上角垃圾桶圖示可勾選多本一次移除（只移除書架紀錄，不刪原始檔案）
 - **閱讀畫面**：點畫面中央叫出/收起工具列；工具列有目錄、上下章、書籤、搜尋、朗讀、字體設定（Aa）與更多選項
 - **朗讀**：點「朗讀」後可暫停/繼續及調整語速；讀完一章會自動接下一章。桌面版另可切換語音與上下段
 - **Android 翻頁**：設定中的「觸控翻頁（九宮格）」可逐格循環設定關閉、前頁或後頁；也可左右滑動或使用音量鍵翻頁
@@ -64,4 +67,13 @@ git push origin main --tags
   閱讀時 `RandomAccessFile.seek` 只讀當前章節（LRU 快取 3 章）
 - 每本書的進度與書籤存在本機 `book.json`；同步資料夾只寫 sidecar JSON，不碰原始小說檔
 - Windows 朗讀使用 OneCore；Android 朗讀使用原生 `android.speech.tts.TextToSpeech`
-- 資料目錄：Windows `%APPDATA%\NovelReader`，Android `filesDir`
+- 資料目錄：Windows `%APPDATA%\NovelReader`，Android `filesDir`。排錯或手動修改前先備份這個資料夾；
+  `library.json` / `settings.json` / `book.json` 損壞時會自動從同名 `.bak` 恢復，損壞副本保留為 `.corrupt`
+- 大型 TXT 不要改成整本載入記憶體（目前只載入當前章節）
+
+## 技術債：AGP 9
+
+`composeApp` 同時是 Kotlin Multiplatform 共用模組與 Android application。AGP 9 不再允許
+`org.jetbrains.kotlin.multiplatform` 與 `com.android.application` 共用同一 Gradle 模組，不能只改版本號。
+升級時須拆出獨立 Android app module、共用模組改用 `com.android.kotlin.multiplatform.library`，
+再一起升 Gradle 9.1+、Compose Multiplatform 1.10+ 與 compileSdk 36.1。拆分前保留 AGP 8.10.1。

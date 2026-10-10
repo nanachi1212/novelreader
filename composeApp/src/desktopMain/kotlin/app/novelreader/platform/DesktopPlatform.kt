@@ -110,6 +110,27 @@ object DesktopPlatform : Platform {
         } else null
     }
 
+    override suspend fun pickBookFolder(): List<FolderBook>? {
+        val root = withContext(Dispatchers.Swing) {
+            val chooser = JFileChooser().apply {
+                dialogTitle = "選擇小說資料夾（會連同子資料夾一起掃描）"
+                fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            }
+            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
+        } ?: return null
+        return withContext(Dispatchers.IO) { listBooksInFolder(root) }
+    }
+
+    /** 遞迴列出 txt/epub，依路徑排序；第一層子資料夾名當 folder（小說/01武俠/金庸/x.txt → "01武俠"） */
+    fun listBooksInFolder(root: File): List<FolderBook> = root.walkTopDown()
+        .filter { it.isFile && (it.name.endsWith(".txt", true) || it.name.endsWith(".epub", true)) }
+        .sortedBy { it.path }
+        .map { f ->
+            val rel = f.parentFile.relativeTo(root).path
+            FolderBook(FileBookSource(f), rel.takeIf { it.isNotEmpty() }?.substringBefore(File.separatorChar))
+        }
+        .toList()
+
     override fun resolveSource(uriOrPath: String): BookSource? {
         ArchiveUri.parse(uriOrPath)?.let { (archivePath, entryPath) ->
             val af = File(archivePath)

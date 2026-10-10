@@ -3,17 +3,21 @@ package app.novelreader
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import app.novelreader.core.model.BookMeta
+import app.novelreader.core.model.Library
 import app.novelreader.platform.AppFont
 import app.novelreader.platform.BookSource
 import app.novelreader.platform.Platform
 import app.novelreader.platform.SyncFolder
 import app.novelreader.ui.AppState
 import app.novelreader.ui.Screen
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -44,6 +48,29 @@ class AppStateBehaviorTest {
             state.backToShelf()
             assertIs<Screen.Bookshelf>(state.screen)
             Unit
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `批次移除會刪掉書庫紀錄與書籍資料夾`() = runBlocking {
+        val root = createTempDirectory("novelreader-ui-remove-").toFile()
+        try {
+            val state = AppState(TestPlatform(root))
+            state.init()
+            val a = BookMeta("a", "甲", "a.txt", "mem://a")
+            val b = BookMeta("b", "乙", "b.txt", "mem://b")
+            val c = BookMeta("c", "丙", "c.txt", "mem://c")
+            state.stores.saveLibrary(Library(listOf(a, b, c)))
+            state.stores.booksDir("a").mkdirs()
+
+            state.removeBooks(listOf(a, b))
+            state.scope.coroutineContext[Job]!!.children.toList().joinAll()
+
+            assertEquals(listOf(c), state.stores.loadLibrary().books)
+            assertEquals(listOf(c), state.library.books)
+            assertFalse(state.stores.booksDir("a").exists())
         } finally {
             root.deleteRecursively()
         }
