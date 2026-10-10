@@ -33,7 +33,12 @@ class BookRepository(
     private fun normalizeTitle(title: String): String =
         title.trim().lowercase().replace(Regex("""[\s　]+"""), "")
 
-    fun import(source: BookSource, forcedCharsetName: String? = null): Flow<ImportState> = channelFlow {
+    /** [initialTags] 只在新書時套用（例如資料夾匯入時的子資料夾名）；重新匯入保留使用者原有標籤 */
+    fun import(
+        source: BookSource,
+        forcedCharsetName: String? = null,
+        initialTags: List<String> = emptyList(),
+    ): Flow<ImportState> = channelFlow {
         var newFingerprint: String? = null
         try {
             send(ImportState.Progress(0f))
@@ -76,6 +81,7 @@ class BookRepository(
                 chapterCount = result.chapters.size,
                 totalBytes = result.totalBytes,
                 coverPath = if (coverSaved) "cover.jpg" else null,
+                tags = existing?.tags ?: initialTags,
             )
 
             val updated = library.copy(

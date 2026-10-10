@@ -30,6 +30,9 @@ data class AppFont(
     val label: String,
 )
 
+/** 從資料夾掃出的一本書；folder 是第一層子資料夾名（根目錄下的書為 null），匯入時當標籤 */
+data class FolderBook(val source: BookSource, val folder: String?)
+
 interface Platform {
     val isDesktop: Boolean
     /** app 私有資料目錄（desktop: %APPDATA%\NovelReader；android: filesDir） */
@@ -38,6 +41,8 @@ interface Platform {
     suspend fun pickBookFile(): BookSource?
     /** 選同步資料夾；取消回傳 null */
     suspend fun pickSyncFolder(): SyncFolder?
+    /** 選一個資料夾並遞迴列出內含 txt/epub；取消或平台不支援回傳 null（目前僅桌面版） */
+    suspend fun pickBookFolder(): List<FolderBook>? = null
     /** 從先前存下的 uriOrPath 還原書籍來源（檔案已不存在/權限失效回傳 null） */
     fun resolveSource(uriOrPath: String): BookSource?
     fun resolveSyncFolder(uriOrPath: String): SyncFolder?
