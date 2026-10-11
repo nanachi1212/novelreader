@@ -6,6 +6,10 @@ enum class BookFormat { TXT, EPUB }
 
 enum class AppTheme { SYSTEM, LIGHT, DARK, SEPIA }
 
+enum class ReadingMode { CONTINUOUS, PAGED }
+
+enum class ReadingDirection { VERTICAL, HORIZONTAL }
+
 @Serializable
 data class BookMeta(
     val fingerprint: String,
@@ -63,11 +67,16 @@ data class ReaderSettings(
     val fontSizeSp: Float = 19f,
     val lineHeightMult: Float = 1.7f,
     val marginHorizontalDp: Int = 24,
+    val marginVerticalDp: Int = 32,
     val theme: AppTheme = AppTheme.SYSTEM,
+    val readingMode: ReadingMode = ReadingMode.CONTINUOUS,
+    val readingDirection: ReadingDirection = ReadingDirection.VERTICAL,
     val s2tEnabled: Boolean = false,
     // 朗讀（TTS）
     val ttsRate: Float = 1f,
     val ttsVoiceId: String? = null,
+    /** Android 九宮格觸控：0 關閉、1 前頁、2 後頁。由左上到右下排列。 */
+    val touchPageZones: List<Int> = List(9) { 0 },
     val syncFolderUri: String? = null,
     val deviceId: String = "",
     // desktop 視窗狀態

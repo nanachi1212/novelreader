@@ -1,6 +1,7 @@
 package app.novelreader.platform
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import java.io.File
 import java.io.InputStream
@@ -29,6 +30,9 @@ data class AppFont(
     val label: String,
 )
 
+/** 從資料夾掃出的一本書；folder 是第一層子資料夾名（根目錄下的書為 null），匯入時當標籤 */
+data class FolderBook(val source: BookSource, val folder: String?)
+
 interface Platform {
     val isDesktop: Boolean
     /** app 私有資料目錄（desktop: %APPDATA%\NovelReader；android: filesDir） */
@@ -37,6 +41,8 @@ interface Platform {
     suspend fun pickBookFile(): BookSource?
     /** 選同步資料夾；取消回傳 null */
     suspend fun pickSyncFolder(): SyncFolder?
+    /** 選一個資料夾並遞迴列出內含 txt/epub；取消或平台不支援回傳 null（目前僅桌面版） */
+    suspend fun pickBookFolder(): List<FolderBook>? = null
     /** 從先前存下的 uriOrPath 還原書籍來源（檔案已不存在/權限失效回傳 null） */
     fun resolveSource(uriOrPath: String): BookSource?
     fun resolveSyncFolder(uriOrPath: String): SyncFolder?
@@ -45,6 +51,10 @@ interface Platform {
     /** 依 id 解析字體；null 表示用預設字體。實作端應快取已建立的 FontFamily */
     fun resolveFontFamily(id: String?): FontFamily?
     fun keepScreenOn(on: Boolean) {}
+    /** Android 音量鍵翻頁；其他平台忽略。 */
+    fun setVolumeKeyHandler(handler: ((Boolean) -> Boolean)?) {}
+    /** 桌面滑鼠右鍵選單；觸控平台維持 no-op。 */
+    fun secondaryClickModifier(label: String, onClick: () -> Unit): Modifier = Modifier
     /** 語音朗讀引擎；null 表示該平台/裝置不支援 */
     val tts: app.novelreader.tts.TtsEngine? get() = null
     /** 壓縮檔匯入支援；null 表示該平台不支援（目前僅桌面版提供） */

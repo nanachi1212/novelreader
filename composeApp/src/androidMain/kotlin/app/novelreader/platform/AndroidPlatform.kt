@@ -22,9 +22,15 @@ class AndroidPlatform(
     private val launchOpenTree: () -> Unit,
 ) : Platform {
 
+    private var volumeKeyHandler: ((Boolean) -> Boolean)? = null
+
     override val isDesktop = false
 
     override val appDataDir: File get() = activity.filesDir
+
+    override val tts: app.novelreader.tts.TtsEngine by lazy {
+        app.novelreader.tts.AndroidTtsEngine(activity.applicationContext)
+    }
 
     private var docDeferred: CompletableDeferred<Uri?>? = null
     private var treeDeferred: CompletableDeferred<Uri?>? = null
@@ -99,6 +105,19 @@ class AndroidPlatform(
             } else {
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
+        }
+    }
+
+    override fun setVolumeKeyHandler(handler: ((Boolean) -> Boolean)?) {
+        volumeKeyHandler = handler
+    }
+
+    fun handleVolumeKey(keyCode: Int, action: Int): Boolean {
+        if (action != android.view.KeyEvent.ACTION_DOWN) return false
+        return when (keyCode) {
+            android.view.KeyEvent.KEYCODE_VOLUME_UP -> volumeKeyHandler?.invoke(false) == true
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> volumeKeyHandler?.invoke(true) == true
+            else -> false
         }
     }
 

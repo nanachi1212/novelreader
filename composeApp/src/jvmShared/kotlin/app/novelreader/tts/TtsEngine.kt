@@ -61,8 +61,13 @@ class TtsController(
                 onChapterDone()
                 return
             }
+            val text = prepareSpeechText(paragraphs[index])
+            if (text.isEmpty()) {
+                speakAt(index + 1)
+                return
+            }
             onParagraph(index)
-            val ok = engine.speak(paragraphs[index], voiceId, rate) {
+            val ok = engine.speak(text, voiceId, rate) {
                 scope.launch { if (s == session) speakAt(index + 1) }
             }
             if (!ok) {
@@ -77,5 +82,13 @@ class TtsController(
     fun stop() {
         session++
         engine.stop()
+    }
+
+    private fun prepareSpeechText(text: String): String {
+        val cleaned = text
+            .replace(Regex("""[.．。·・‧]{3,}"""), "，")
+            .replace(Regex("""[…]{2,}"""), "，")
+            .trim()
+        return if (cleaned.any { it.isLetterOrDigit() }) cleaned else ""
     }
 }

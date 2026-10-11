@@ -6,10 +6,26 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class EpubParserTest {
+
+    @Test
+    fun `拒絕含外部實體的 EPUB XML`() {
+        val file = File.createTempFile("novelreader-xxe", ".epub").apply { deleteOnExit() }
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write("""<?xml version="1.0"?>
+                <!DOCTYPE container [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+                <container><rootfiles><rootfile full-path="&xxe;"/></rootfiles></container>
+            """.trimIndent().toByteArray())
+            zip.closeEntry()
+        }
+
+        assertFails { EpubParser.parse(file) }
+    }
 
     private val containerXml = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -101,5 +117,18 @@ class EpubParserTest {
         val parsed = EpubParser.parse(buildEpub())
         assertNotNull(parsed.coverBytes)
         assertTrue(parsed.coverBytes!!.contentEquals(byteArrayOf(1, 2, 3, 4)))
+    }
+
+    @Test
+    fun `拒絕解壓後過大的 EPUB 項目`() {
+        val file = File.createTempFile("novelreader-large-entry", ".epub").apply { deleteOnExit() }
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            val block = ByteArray(1024 * 1024)
+            repeat(33) { zip.write(block) }
+            zip.closeEntry()
+        }
+
+        assertFails { EpubParser.parse(file) }
     }
 }

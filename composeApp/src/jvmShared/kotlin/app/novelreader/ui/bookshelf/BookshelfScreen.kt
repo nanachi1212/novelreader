@@ -17,11 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,10 +46,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.novelreader.generated.resources.Res
+import app.novelreader.generated.resources.icon_add
+import app.novelreader.generated.resources.icon_close
+import app.novelreader.generated.resources.icon_delete
+import app.novelreader.generated.resources.icon_list
+import app.novelreader.generated.resources.icon_search
+import app.novelreader.generated.resources.icon_settings
+import org.jetbrains.compose.resources.vectorResource
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.ReadingProgress
 import app.novelreader.data.BookRepository.ImportState
-import app.novelreader.platform.ArchiveEntryInfo
 import app.novelreader.platform.ArchiveUri
 import app.novelreader.platform.BookSource
 import app.novelreader.ui.AppState
@@ -72,6 +74,14 @@ private enum class SortMode(val label: String) {
     RECENT("最近閱讀"), TITLE("書名"), IMPORTED("新增時間"),
 }
 
+/** 批次匯入的一個項目；resolve 延後到真正匯入時才開檔（壓縮檔 entry 需解壓） */
+private class BatchItem(
+    val name: String,
+    val subtitle: String?,
+    val tags: List<String>,
+    val resolve: () -> BookSource?,
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BookshelfScreen(state: AppState) {
@@ -82,7 +92,8 @@ fun BookshelfScreen(state: AppState) {
     var tagEditTarget by remember { mutableStateOf<BookMeta?>(null) }
     var duplicatePrompt by remember { mutableStateOf<Pair<BookMeta, BookMeta>?>(null) }
     var archiveScanning by remember { mutableStateOf(false) }
-    var archivePicker by remember { mutableStateOf<Pair<String, List<ArchiveEntryInfo>>?>(null) }
+    var batchPicker by remember { mutableStateOf<List<BatchItem>?>(null) }
+    var removePicker by remember { mutableStateOf(false) }
     var batchProgress by remember { mutableStateOf<BatchProgress?>(null) }
     var batchSummary by remember { mutableStateOf<BatchSummary?>(null) }
     var progressMap by remember { mutableStateOf(emptyMap<String, ReadingProgress>()) }
@@ -131,29 +142,29 @@ fun BookshelfScreen(state: AppState) {
     }
 
     /** 批次匯入：逐本收 Flow、失敗續行、完成後留在書架顯示總結 */
-    suspend fun importArchiveEntries(archivePath: String, entries: List<ArchiveEntryInfo>) {
+    suspend fun importBatch(items: List<BatchItem>) {
         var imported = 0
         var skipped = 0
         var similar = 0
         val failures = mutableListOf<Pair<String, String>>()
-        entries.forEachIndexed { i, entry ->
-            batchProgress = BatchProgress(i + 1, entries.size, entry.displayName, 0f)
-            val src = state.platform.resolveSource(ArchiveUri.build(archivePath, entry.entryPath))
+        items.forEachIndexed { i, item ->
+            batchProgress = BatchProgress(i + 1, items.size, item.name, 0f)
+            val src = item.resolve()
             if (src == null) {
-                failures += entry.displayName to "無法讀取壓縮檔"
+                failures += item.name to "無法讀取檔案"
                 return@forEachIndexed
             }
-            state.repository.import(src).collect { st ->
+            state.repository.import(src, initialTags = item.tags).collect { st ->
                 when (st) {
                     is ImportState.Progress ->
-                        batchProgress = BatchProgress(i + 1, entries.size, entry.displayName, st.fraction)
+                        batchProgress = BatchProgress(i + 1, items.size, item.name, st.fraction)
                     is ImportState.Done -> {
                         if (st.alreadyExisted) skipped++ else {
                             imported++
                             if (st.possibleDuplicateOf != null) similar++
                         }
                     }
-                    is ImportState.Error -> failures += entry.displayName to st.message
+                    is ImportState.Error -> failures += item.name to st.message
                 }
             }
         }
@@ -189,7 +200,29 @@ fun BookshelfScreen(state: AppState) {
                     if (src == null) importState = ImportState.Error("無法讀取壓縮檔")
                     else importSingle(src)
                 }
-                else -> archivePicker = source.uriOrPath to entries
+                else -> batchPicker = entries.map { e ->
+                    BatchItem(e.displayName, formatSize(e.sizeBytes), emptyList()) {
+                        state.platform.resolveSource(ArchiveUri.build(source.uriOrPath, e.entryPath))
+                    }
+                }
+            }
+        }
+    }
+
+    /** 資料夾匯入：遞迴掃 txt/epub，第一層子資料夾名自動變成標籤（書架可按標籤篩選） */
+    fun startFolderImport() {
+        scope.launch {
+            val books = state.platform.pickBookFolder() ?: return@launch
+            if (books.isEmpty()) {
+                importState = ImportState.Error("資料夾內找不到任何 txt 或 epub 檔案")
+                return@launch
+            }
+            batchPicker = books.map { b ->
+                BatchItem(
+                    name = b.source.displayName,
+                    subtitle = listOfNotNull(b.folder, formatSize(b.source.sizeBytes)).joinToString(" · "),
+                    tags = listOfNotNull(b.folder),
+                ) { b.source }
             }
         }
     }
@@ -232,8 +265,13 @@ fun BookshelfScreen(state: AppState) {
                                 }
                             }
                         }
+                        if (state.library.books.isNotEmpty()) {
+                            IconButton(onClick = { removePicker = true }) {
+                                Icon(vectorResource(Res.drawable.icon_delete), contentDescription = "批次移除")
+                            }
+                        }
                         IconButton(onClick = { state.screen = Screen.Settings }) {
-                            Icon(Icons.Filled.Settings, contentDescription = "設定")
+                            Icon(vectorResource(Res.drawable.icon_settings), contentDescription = "設定")
                         }
                     },
                 )
@@ -243,9 +281,9 @@ fun BookshelfScreen(state: AppState) {
                         onValueChange = { searchQuery = it },
                         singleLine = true,
                         placeholder = { Text("搜尋書名…") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        leadingIcon = { Icon(vectorResource(Res.drawable.icon_search), contentDescription = null) },
                         trailingIcon = if (searchQuery.isNotEmpty()) {
-                            { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Close, contentDescription = "清除") } }
+                            { IconButton(onClick = { searchQuery = "" }) { Icon(vectorResource(Res.drawable.icon_close), contentDescription = "清除") } }
                         } else null,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     )
@@ -275,11 +313,20 @@ fun BookshelfScreen(state: AppState) {
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { startImport() },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("匯入書籍") },
-            )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (state.platform.isDesktop) {
+                    ExtendedFloatingActionButton(
+                        onClick = { startFolderImport() },
+                        icon = { Icon(vectorResource(Res.drawable.icon_list), contentDescription = null) },
+                        text = { Text("匯入資料夾") },
+                    )
+                }
+                ExtendedFloatingActionButton(
+                    onClick = { startImport() },
+                    icon = { Icon(vectorResource(Res.drawable.icon_add), contentDescription = null) },
+                    text = { Text("匯入書籍") },
+                )
+            }
         },
     ) { padding ->
         if (state.library.books.isEmpty()) {
@@ -291,8 +338,8 @@ fun BookshelfScreen(state: AppState) {
                 Text("書架是空的", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (state.platform.archive != null)
-                        "點右下角「匯入書籍」選擇 txt / epub 或壓縮檔開始閱讀"
+                    if (state.platform.isDesktop)
+                        "點右下角「匯入書籍」選擇 txt / epub / 壓縮檔，或「匯入資料夾」一次匯入整個資料夾"
                     else
                         "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀",
                     style = MaterialTheme.typography.bodyMedium,
@@ -311,7 +358,8 @@ fun BookshelfScreen(state: AppState) {
             LazyColumn(
                 Modifier.fillMaxSize().padding(padding),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp
+                    start = 16.dp, end = 16.dp, top = 8.dp,
+                    bottom = if (state.platform.isDesktop) 160.dp else 88.dp, // 桌面有兩顆 FAB
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -366,18 +414,39 @@ fun BookshelfScreen(state: AppState) {
             confirmButton = {},
         )
     }
-    archivePicker?.let { (archivePath, entries) ->
-        ArchiveEntryPickerDialog(
-            entries = entries,
+    batchPicker?.let { items ->
+        BookPickerDialog(
+            entries = items,
+            title = "選擇要匯入的書籍（${items.size} 個檔案）",
+            confirmLabel = { "匯入（$it 本）" },
+            label = { it.name },
+            subtitle = { it.subtitle },
             onConfirm = { selected ->
-                archivePicker = null
-                scope.launch { importArchiveEntries(archivePath, selected) }
+                batchPicker = null
+                scope.launch { importBatch(selected) }
             },
-            onDismiss = { archivePicker = null },
+            onDismiss = { batchPicker = null },
         )
     }
     batchProgress?.let { BatchImportProgressDialog(it) }
     batchSummary?.let { BatchImportSummaryDialog(it) { batchSummary = null } }
+
+    // 批次移除（只移除書架紀錄，不刪原始檔）
+    if (removePicker) {
+        BookPickerDialog(
+            entries = visibleBooks,
+            title = "選擇要移除的書籍（不會刪除原始檔案）",
+            confirmLabel = { "移除（$it 本）" },
+            label = { it.title },
+            subtitle = { "${it.chapterCount} 章 · ${formatRelativeTime(progressMap[it.fingerprint]?.updatedAt ?: 0)}" },
+            initiallyChecked = false,
+            onConfirm = { selected ->
+                removePicker = false
+                state.removeBooks(selected)
+            },
+            onDismiss = { removePicker = false },
+        )
+    }
 
     // 書籍選項（長按觸發）
     optionsTarget?.let { book ->

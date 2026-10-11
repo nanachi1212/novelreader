@@ -1,18 +1,18 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.2.20"
+agp = "8.10.1"
+kotlin = "2.2.21"
 composeMultiplatform = "1.9.0"
-coroutines = "1.10.2"
+coroutines = "1.11.0"
 serialization = "1.9.0"
 coreKtx = "1.15.0"
 activityCompose = "1.10.1"
-documentfile = "1.0.1"
+documentfile = "1.1.0"
 juniversalchardet = "2.5.0"
-opencc4j = "1.8.1"
-jsoup = "1.18.1"
+opencc4j = "1.14.0"
+jsoup = "1.23.1"
 commonsCompress = "1.28.0"
-xz = "1.10"
-junrar = "7.5.5"
+xz = "1.12"
+junrar = "8.1.0"
 
 [libraries]
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -29,6 +29,7 @@ commons-compress = { group = "org.apache.commons", name = "commons-compress", ve
 xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 junrar = { group = "com.github.junrar", name = "junrar", version.ref = "junrar" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
+compose-resources = { group = "org.jetbrains.compose.components", name = "components-resources", version.ref = "composeMultiplatform" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

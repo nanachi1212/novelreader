@@ -100,13 +100,7 @@ object Transcoder {
             }
         }
 
-        if (outFile.exists()) outFile.delete()
-        if (!tmpFile.renameTo(outFile)) {
-            java.nio.file.Files.move(
-                tmpFile.toPath(), outFile.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-            )
-        }
+        replaceFile(tmpFile, outFile)
 
         // 誤判風暴 → 退回嚴格模式；仍太多 → 放棄標題改用偽章節
         var effective = headings.toList()
@@ -216,13 +210,7 @@ object Transcoder {
             }
         }
 
-        if (outFile.exists()) outFile.delete()
-        if (!tmpFile.renameTo(outFile)) {
-            java.nio.file.Files.move(
-                tmpFile.toPath(), outFile.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-            )
-        }
+        replaceFile(tmpFile, outFile)
 
         val result = spans.mapIndexed { i, s ->
             ChapterIndexEntry(
@@ -245,6 +233,21 @@ object Transcoder {
             off += n
         }
         return if (off == buf.size) buf else buf.copyOf(off)
+    }
+
+    private fun replaceFile(source: File, target: File) {
+        try {
+            java.nio.file.Files.move(
+                source.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                source.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
     }
 
     private class CountingInputStream(base: InputStream) : FilterInputStream(base) {

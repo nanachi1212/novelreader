@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.novelreader.core.model.AppTheme
+import app.novelreader.core.model.ReadingDirection
+import app.novelreader.core.model.ReadingMode
 import app.novelreader.ui.AppState
 import kotlin.math.roundToInt
 
@@ -38,7 +42,12 @@ fun ReaderSettingsSheet(state: AppState, onDismiss: () -> Unit) {
     val settings = state.settings
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+        ) {
 
             // 字體
             SettingLabel("字體")
@@ -98,13 +107,82 @@ fun ReaderSettingsSheet(state: AppState, onDismiss: () -> Unit) {
 
             // 邊距
             SliderRow(
-                label = "邊距",
+                label = "左右",
                 valueText = "${settings.marginHorizontalDp}",
                 value = settings.marginHorizontalDp.toFloat(),
                 range = 8f..96f,
                 onChange = { v -> state.updateSettings { it.copy(marginHorizontalDp = v.roundToInt()) } },
             )
+            SliderRow(
+                label = "上下",
+                valueText = "${settings.marginVerticalDp}",
+                value = settings.marginVerticalDp.toFloat(),
+                range = 8f..120f,
+                onChange = { v -> state.updateSettings { it.copy(marginVerticalDp = v.roundToInt()) } },
+            )
 
+            if (!state.platform.isDesktop) {
+                SettingLabel("觸控翻頁（九宮格）")
+                Text(
+                    "點選格子循環：關閉 → 前頁 → 後頁",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column {
+                    repeat(3) { row ->
+                        Row(Modifier.fillMaxWidth()) {
+                            repeat(3) { col ->
+                                val index = row * 3 + col
+                                val action = settings.touchPageZones.getOrElse(index) { 0 }
+                                OutlinedButton(
+                                    onClick = {
+                                        state.updateSettings {
+                                            val zones = it.touchPageZones.toMutableList().apply {
+                                                while (size < 9) add(0)
+                                                this[index] = (action + 1) % 3
+                                            }
+                                            it.copy(touchPageZones = zones)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).padding(2.dp),
+                                ) {
+                                    Text(listOf("", "前頁", "後頁")[action])
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            SettingLabel("閱讀模式")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(
+                    ReadingMode.CONTINUOUS to "連續滾動",
+                    ReadingMode.PAGED to "分頁",
+                ).forEachIndexed { i, (mode, label) ->
+                    SegmentedButton(
+                        selected = settings.readingMode == mode,
+                        onClick = { state.updateSettings { it.copy(readingMode = mode) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
+                    ) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            SettingLabel("閱讀方向")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(
+                    ReadingDirection.VERTICAL to "直向",
+                    ReadingDirection.HORIZONTAL to "橫向",
+                ).forEachIndexed { i, (direction, label) ->
+                    SegmentedButton(
+                        selected = settings.readingDirection == direction,
+                        onClick = { state.updateSettings { it.copy(readingDirection = direction) } },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = 2),
+                    ) { Text(label) }
+                }
+            }
             Spacer(Modifier.height(8.dp))
 
             // 主題

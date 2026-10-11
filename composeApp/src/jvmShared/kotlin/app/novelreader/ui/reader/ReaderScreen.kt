@@ -3,6 +3,7 @@ package app.novelreader.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,16 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -37,7 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -66,15 +64,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import app.novelreader.generated.resources.Res
+import app.novelreader.generated.resources.icon_arrow_back
+import app.novelreader.generated.resources.icon_arrow_left
+import app.novelreader.generated.resources.icon_arrow_right
+import app.novelreader.generated.resources.icon_list
+import app.novelreader.generated.resources.icon_more_vert
+import app.novelreader.generated.resources.icon_search
+import org.jetbrains.compose.resources.vectorResource
 import androidx.compose.ui.unit.sp
 import app.novelreader.core.convert.ChineseConvert
 import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.SyncRecord
+import app.novelreader.core.model.ReadingDirection
 import app.novelreader.reader.ChapterLoader
 import app.novelreader.ui.AppState
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -96,6 +104,9 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     var showSearchOverlay by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var highlightParagraph by remember { mutableStateOf<Int?>(null) }
+    var chapterJumpText by remember(meta.fingerprint) { mutableStateOf("") }
+    var chapterSliderValue by remember(meta.fingerprint) { mutableStateOf(0f) }
+    var autoAdvanceArmed by remember { mutableStateOf(false) }
 
     // ---- 朗讀（TTS）----
     val ttsEngine = state.platform.tts
@@ -166,6 +177,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         scope.launch {
             val loaded = ld.load(target)
             chapter = loaded
+            autoAdvanceArmed = false
             val scrollTarget = if (toEnd) loaded.paragraphs.size else paragraph
             pendingScrollTo = scrollTarget
             chapterLoadTick++
@@ -194,7 +206,14 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             startIndex = index,
             onParagraph = { i ->
                 ttsParagraph = i
-                scope.launch { listState.animateScrollToItem(i) }
+                val layout = listState.layoutInfo
+                val item = layout.visibleItemsInfo.firstOrNull { it.index == i }
+                val fullyVisible = item != null &&
+                    item.offset >= layout.viewportStartOffset &&
+                    item.offset + item.size <= layout.viewportEndOffset
+                if (!fullyVisible) {
+                    scope.launch { listState.animateScrollToItem(i) }
+                }
             },
             onChapterDone = {
                 val ldNow = loader
@@ -238,20 +257,29 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    fun isAtChapterTurnPoint(): Boolean {
+        val info = listState.layoutInfo
+        val lastVisible = info.visibleItemsInfo.lastOrNull() ?: return false
+        val nextChapterItem = info.totalItemsCount - 1
+        return info.totalItemsCount > 0 && lastVisible.index >= nextChapterItem
+    }
+
     /** 翻到頁尾／頁首時自動接下一章／上一章（上一章從章末開始，銜接翻頁方向） */
     fun pageForward(viewport: Float) {
         val ldNow = loader
         val chNow = chapter
-        val info = listState.layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull()
-        val atBottom = lastVisible != null &&
-            lastVisible.index == info.totalItemsCount - 1 &&
-            lastVisible.offset + lastVisible.size <= info.viewportEndOffset
-        if (atBottom && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
+        if (isAtChapterTurnPoint() && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
             openChapter(chNow.index + 1)
         } else {
+            autoAdvanceArmed = true
             scope.launch { listState.animateScrollBy(viewport * 0.9f) }
         }
+    }
+
+    fun viewportLength(): Float = if (settings.readingDirection == ReadingDirection.HORIZONTAL) {
+        listState.layoutInfo.viewportSize.width.toFloat()
+    } else {
+        listState.layoutInfo.viewportSize.height.toFloat()
     }
 
     fun pageBackward(viewport: Float) {
@@ -262,6 +290,23 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         } else {
             scope.launch { listState.animateScrollBy(-viewport * 0.9f) }
         }
+    }
+
+    fun handleTouchZone(x: Float, y: Float, width: Float, height: Float) {
+        val col = (x / width * 3).toInt().coerceIn(0, 2)
+        val row = (y / height * 3).toInt().coerceIn(0, 2)
+        when (settings.touchPageZones[row * 3 + col]) {
+            1 -> pageBackward(viewportLength())
+            2 -> pageForward(viewportLength())
+            else -> chromeVisible = !chromeVisible
+        }
+    }
+
+    fun jumpToChapter(input: String) {
+        val ldNow = loader ?: return
+        val target = input.trim().toIntOrNull()?.minus(1) ?: return
+        openChapter(target.coerceIn(0, ldNow.chapters.lastIndex))
+        scope.launch { drawerState.close() }
     }
 
     // 開書：載章節索引 + 進度（先讀本機/同步合併），跳到上次位置
@@ -303,6 +348,25 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
+    // 使用者捲到「下一章」提示露出時自動接下一章；短章初次載入不會自己跳走。
+    LaunchedEffect(loader, chapter?.index) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { if (it) autoAdvanceArmed = true }
+    }
+
+    LaunchedEffect(loader, chapter?.index) {
+        snapshotFlow { !ttsActive && autoAdvanceArmed && isAtChapterTurnPoint() }
+            .distinctUntilChanged()
+            .debounce(200)
+            .collect { shouldAdvance ->
+                val ldNow = loader
+                val chNow = chapter
+                if (shouldAdvance && ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
+                    openChapter(chNow.index + 1)
+                }
+            }
+    }
+
     // 捲動位置 → 進度（1 秒防抖）
     LaunchedEffect(loader) {
         snapshotFlow { listState.firstVisibleItemIndex }
@@ -318,11 +382,20 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     // 進出畫面：保持螢幕常亮、註冊立即保存 hook（關窗/退出時同步 flush，不等 30 秒防抖）
     DisposableEffect(meta.fingerprint) {
         state.platform.keepScreenOn(true)
+        state.platform.setVolumeKeyHandler { forward ->
+            val viewport = viewportLength()
+            if (viewport <= 0f) false else {
+                // Android 音量上鍵翻前頁、下鍵翻後頁。
+                if (forward) pageForward(viewport) else pageBackward(viewport)
+                true
+            }
+        }
         state.readerFlush = {
             record?.let { state.stores.saveBookData(meta.fingerprint, it) }
             state.syncManager.flush(meta.fingerprint)
         }
         onDispose {
+            state.platform.setVolumeKeyHandler(null)
             ttsController?.stop()
             state.platform.keepScreenOn(false)
             state.readerFlush = null
@@ -339,7 +412,11 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
     // TOC 打開時捲到當前章節
     LaunchedEffect(drawerState.isOpen) {
         if (drawerState.isOpen) {
-            chapter?.let { tocListState.scrollToItem(it.index.coerceAtLeast(0)) }
+            chapter?.let {
+                chapterJumpText = "${it.index + 1}"
+                chapterSliderValue = it.index.toFloat()
+                tocListState.scrollToItem(it.index.coerceAtLeast(0))
+            }
         }
     }
 
@@ -358,6 +435,45 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     modifier = Modifier.padding(16.dp),
                 )
                 HorizontalDivider()
+                val chapterCount = ld?.chapters?.size ?: 0
+                if (chapterCount > 0) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = chapterJumpText,
+                                onValueChange = { chapterJumpText = it.filter(Char::isDigit).take(5) },
+                                singleLine = true,
+                                label = { Text("章節") },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = { jumpToChapter(chapterJumpText) }) {
+                                Text("跳轉")
+                            }
+                        }
+                        if (chapterCount > 1) {
+                            Slider(
+                                value = chapterSliderValue.coerceIn(0f, (chapterCount - 1).toFloat()),
+                                onValueChange = {
+                                    chapterSliderValue = it
+                                    chapterJumpText = "${it.roundToInt() + 1}"
+                                },
+                                onValueChangeFinished = {
+                                    openChapter(chapterSliderValue.roundToInt().coerceIn(0, chapterCount - 1))
+                                },
+                                valueRange = 0f..(chapterCount - 1).toFloat(),
+                            )
+                            Text(
+                                "${chapterSliderValue.roundToInt() + 1} / $chapterCount",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
                 LazyColumn(state = tocListState, modifier = Modifier.fillMaxSize()) {
                     items(ld?.chapters?.size ?: 0) { i ->
                         val entry = ld!!.chapters[i]
@@ -385,7 +501,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                 .focusTarget()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val viewport = listState.layoutInfo.viewportSize.height.toFloat()
+                    val viewport = viewportLength()
                     when (event.key) {
                         Key.DirectionRight, Key.DirectionDown, Key.PageDown, Key.Spacebar -> {
                             pageForward(viewport); true
@@ -403,7 +519,23 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     }
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures { chromeVisible = !chromeVisible }
+                    detectTapGestures { offset ->
+                        if (state.platform.isDesktop) chromeVisible = !chromeVisible
+                        else handleTouchZone(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
+                    }
+                }
+                .pointerInput(Unit) {
+                    var drag = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { drag = 0f },
+                        onHorizontalDrag = { _, amount -> drag += amount },
+                        onDragEnd = {
+                            val viewport = viewportLength()
+                            if (kotlin.math.abs(drag) > 96f && viewport > 0f) {
+                                if (drag < 0f) pageForward(viewport) else pageBackward(viewport)
+                            }
+                        },
+                    )
                 },
         ) {
             if (ld == null || ch == null) {
@@ -420,26 +552,23 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
 
-                SelectionContainer {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = settings.marginHorizontalDp.dp,
-                            vertical = 32.dp,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
-                    ) {
+                val itemsContent: LazyListScope.() -> Unit = {
                         items(ch.paragraphs.size) { i ->
                             val highlighted = highlightParagraph == i || (ttsActive && ttsParagraph == i)
                             Text(
                                 text = ch.paragraphs[i],
                                 style = paragraphStyle,
-                                modifier = Modifier.fillMaxWidth().let {
-                                    if (highlighted) {
-                                        it.background(MaterialTheme.colorScheme.primaryContainer)
-                                    } else it
-                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(state.platform.secondaryClickModifier("從這裡開始朗讀") {
+                                        chromeVisible = false
+                                        startTtsAt(i)
+                                    })
+                                    .let {
+                                        if (highlighted) {
+                                            it.background(MaterialTheme.colorScheme.primaryContainer)
+                                        } else it
+                                    },
                             )
                         }
                         item {
@@ -462,6 +591,30 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 }
                             }
                         }
+                }
+                SelectionContainer {
+                    if (settings.readingDirection == ReadingDirection.HORIZONTAL) {
+                        LazyRow(
+                            state = listState,
+                            userScrollEnabled = settings.readingMode == app.novelreader.core.model.ReadingMode.CONTINUOUS,
+                            modifier = Modifier.fillMaxSize().padding(
+                                horizontal = settings.marginHorizontalDp.dp,
+                                vertical = settings.marginVerticalDp.dp,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            content = itemsContent,
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            userScrollEnabled = settings.readingMode == app.novelreader.core.model.ReadingMode.CONTINUOUS,
+                            modifier = Modifier.fillMaxSize().padding(
+                                horizontal = settings.marginHorizontalDp.dp,
+                                vertical = settings.marginVerticalDp.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            content = itemsContent,
+                        )
                     }
                 }
             }
@@ -478,7 +631,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { state.backToShelf() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回書架")
+                            Icon(vectorResource(Res.drawable.icon_arrow_back), contentDescription = "返回書架")
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -519,7 +672,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             onClick = { startTtsAt(ttsParagraph - 1) },
                             enabled = ttsParagraph > 0,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一段")
+                            Icon(vectorResource(Res.drawable.icon_arrow_left), contentDescription = "上一段")
                         }
                         TextButton(onClick = { if (ttsPlaying) pauseTts() else startTtsAt(ttsParagraph) }) {
                             Text(if (ttsPlaying) "暫停" else "繼續")
@@ -528,7 +681,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             onClick = { startTtsAt(ttsParagraph + 1) },
                             enabled = ttsParagraph < ch.paragraphs.lastIndex,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一段")
+                            Icon(vectorResource(Res.drawable.icon_arrow_right), contentDescription = "下一段")
                         }
                         fun adjustRate(delta: Float) {
                             val next = ((state.settings.ttsRate + delta) * 10).roundToInt() / 10f
@@ -547,28 +700,30 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         TextButton(onClick = { adjustRate(+0.1f) }, enabled = state.settings.ttsRate < 4f) {
                             Text("＋")
                         }
-                        Box {
-                            TextButton(onClick = { showTtsVoiceMenu = true }) { Text("語音") }
-                            DropdownMenu(
-                                expanded = showTtsVoiceMenu,
-                                onDismissRequest = { showTtsVoiceMenu = false },
-                            ) {
-                                (ttsVoices ?: emptyList()).forEach { v ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            val selected = v.id == state.settings.ttsVoiceId
-                                            Text(
-                                                (if (selected) "✓ " else "") + "${v.label}（${v.language}）",
-                                                maxLines = 1,
-                                            )
-                                        },
-                                        onClick = {
-                                            showTtsVoiceMenu = false
-                                            state.updateSettings { it.copy(ttsVoiceId = v.id) }
-                                            ttsController?.voiceId = v.id
-                                            if (ttsPlaying) startTtsAt(ttsParagraph)
-                                        },
-                                    )
+                        if (state.platform.isDesktop) {
+                            Box {
+                                TextButton(onClick = { showTtsVoiceMenu = true }) { Text("語音") }
+                                DropdownMenu(
+                                    expanded = showTtsVoiceMenu,
+                                    onDismissRequest = { showTtsVoiceMenu = false },
+                                ) {
+                                    (ttsVoices ?: emptyList()).forEach { v ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                val selected = v.id == state.settings.ttsVoiceId
+                                                Text(
+                                                    (if (selected) "✓ " else "") + "${v.label}（${v.language}）",
+                                                    maxLines = 1,
+                                                )
+                                            },
+                                            onClick = {
+                                                showTtsVoiceMenu = false
+                                                state.updateSettings { it.copy(ttsVoiceId = v.id) }
+                                                ttsController?.voiceId = v.id
+                                                if (ttsPlaying) startTtsAt(ttsParagraph)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -589,19 +744,19 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目錄")
+                            Icon(vectorResource(Res.drawable.icon_list), contentDescription = "目錄")
                         }
                         IconButton(
                             onClick = { openChapter(ch.index - 1) },
                             enabled = ch.index > 0,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一章")
+                            Icon(vectorResource(Res.drawable.icon_arrow_left), contentDescription = "上一章")
                         }
                         IconButton(
                             onClick = { openChapter(ch.index + 1) },
                             enabled = ch.index < ld.chapters.lastIndex,
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一章")
+                            Icon(vectorResource(Res.drawable.icon_arrow_right), contentDescription = "下一章")
                         }
                         TextButton(onClick = { showBookmarksSheet = true }) {
                             Text("書籤")
@@ -612,30 +767,32 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                             }
                         }
                         IconButton(onClick = { showSearchOverlay = true }) {
-                            Icon(Icons.Filled.Search, contentDescription = "搜尋")
+                            Icon(vectorResource(Res.drawable.icon_search), contentDescription = "搜尋")
                         }
                         TextButton(onClick = { showSettingsSheet = true }) {
                             Text("Aa", style = MaterialTheme.typography.titleMedium)
                         }
-                        Box {
-                            IconButton(onClick = { showMoreMenu = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "更多")
-                            }
-                            DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(if (settings.s2tEnabled) "顯示原文（簡體）" else "轉換為繁體") },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        state.updateSettings { it.copy(s2tEnabled = !it.s2tEnabled) }
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("編碼設定") },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        showEncodingDialog = true
-                                    },
-                                )
+                        if (state.platform.isDesktop) {
+                            Box {
+                                IconButton(onClick = { showMoreMenu = true }) {
+                                    Icon(vectorResource(Res.drawable.icon_more_vert), contentDescription = "更多")
+                                }
+                                DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (settings.s2tEnabled) "顯示原文（簡體）" else "轉換為繁體") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            state.updateSettings { it.copy(s2tEnabled = !it.s2tEnabled) }
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("編碼設定") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            showEncodingDialog = true
+                                        },
+                                    )
+                                }
                             }
                         }
                     }

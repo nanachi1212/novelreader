@@ -1,7 +1,12 @@
 package app.novelreader.platform
 
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Typeface
 import kotlinx.coroutines.Dispatchers
@@ -11,11 +16,16 @@ import org.jetbrains.skia.FontStyle
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.GraphicsEnvironment
+import java.awt.KeyboardFocusManager
+import java.awt.MouseInfo
 import java.io.File
 import java.io.InputStream
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.swing.JFileChooser
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
+import javax.swing.SwingUtilities
 
 object DesktopPlatform : Platform {
     override val isDesktop = true
@@ -49,6 +59,33 @@ object DesktopPlatform : Platform {
 
     override val archive: ArchiveSupport get() = DesktopArchiveSupport
 
+    @OptIn(ExperimentalComposeUiApi::class)
+    override fun secondaryClickModifier(label: String, onClick: () -> Unit): Modifier =
+        Modifier.pointerInput(label, onClick) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Press && event.button == PointerButton.Secondary) {
+                        showContextMenu(label, onClick)
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
+        }
+
+    private fun showContextMenu(label: String, onClick: () -> Unit) {
+        SwingUtilities.invokeLater {
+            val window = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow ?: return@invokeLater
+            val pointer = MouseInfo.getPointerInfo()?.location ?: return@invokeLater
+            val origin = window.locationOnScreen
+            JPopupMenu().apply {
+                add(JMenuItem(label).apply {
+                    addActionListener { SwingUtilities.invokeLater(onClick) }
+                })
+            }.show(window, pointer.x - origin.x, pointer.y - origin.y)
+        }
+    }
+
     override suspend fun pickBookFile(): BookSource? = withContext(Dispatchers.Swing) {
         val dialog = FileDialog(null as Frame?, "選擇書籍或壓縮檔（txt / epub / zip / rar / 7z）", FileDialog.LOAD)
         dialog.setFilenameFilter { _, name ->
@@ -72,6 +109,27 @@ object DesktopPlatform : Platform {
             chooser.selectedFile?.let { DesktopSyncFolder(it) }
         } else null
     }
+
+    override suspend fun pickBookFolder(): List<FolderBook>? {
+        val root = withContext(Dispatchers.Swing) {
+            val chooser = JFileChooser().apply {
+                dialogTitle = "選擇小說資料夾（會連同子資料夾一起掃描）"
+                fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            }
+            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
+        } ?: return null
+        return withContext(Dispatchers.IO) { listBooksInFolder(root) }
+    }
+
+    /** 遞迴列出 txt/epub，依路徑排序；第一層子資料夾名當 folder（小說/01武俠/金庸/x.txt → "01武俠"） */
+    fun listBooksInFolder(root: File): List<FolderBook> = root.walkTopDown()
+        .filter { it.isFile && (it.name.endsWith(".txt", true) || it.name.endsWith(".epub", true)) }
+        .sortedBy { it.path }
+        .map { f ->
+            val rel = f.parentFile.relativeTo(root).path
+            FolderBook(FileBookSource(f), rel.takeIf { it.isNotEmpty() }?.substringBefore(File.separatorChar))
+        }
+        .toList()
 
     override fun resolveSource(uriOrPath: String): BookSource? {
         ArchiveUri.parse(uriOrPath)?.let { (archivePath, entryPath) ->
@@ -145,8 +203,19 @@ class DesktopSyncFolder(private val root: File) : SyncFolder {
         val tmp = File(dir, "$name.tmp")
         tmp.writeBytes(bytes)
         val target = File(dir, name)
-        if (target.exists()) target.delete()
-        tmp.renameTo(target)
+        try {
+            java.nio.file.Files.move(
+                tmp.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                tmp.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+        true
     } catch (_: Exception) {
         false
     }

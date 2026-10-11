@@ -7,6 +7,7 @@ import org.jsoup.nodes.TextNode
 import org.jsoup.select.NodeVisitor
 import org.w3c.dom.Element as XmlElement
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
@@ -16,6 +17,9 @@ import javax.xml.parsers.DocumentBuilderFactory
  * jsoup 抽正文（保留段落換行）。輸出結構跟既有 TXT 管線相容（章節標題 + 段落清單）。
  */
 object EpubParser {
+
+    private const val MAX_ENTRY_BYTES = 32L * 1024 * 1024
+    private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
 
     data class ParsedChapter(val title: String, val paragraphs: List<String>)
     data class ParsedBook(val chapters: List<ParsedChapter>, val coverBytes: ByteArray?)
@@ -27,6 +31,16 @@ object EpubParser {
 
     fun parse(epubFile: File): ParsedBook {
         ZipFile(epubFile).use { zip ->
+            var declaredTotal = 0L
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val size = entries.nextElement().size
+                if (size > MAX_ENTRY_BYTES) throw IllegalArgumentException("EPUB 內含超過 32 MB 的單一檔案")
+                if (size > 0 && declaredTotal > MAX_TOTAL_BYTES - size) {
+                    throw IllegalArgumentException("EPUB 解壓後內容超過 256 MB")
+                }
+                if (size > 0) declaredTotal += size
+            }
             val containerXml = readEntry(zip, "META-INF/container.xml")
                 ?: throw IllegalArgumentException("不是有效的 EPUB 檔案（找不到 container.xml）")
             val opfPath = parseContainer(containerXml)
@@ -220,14 +234,37 @@ object EpubParser {
     private fun newXmlDoc(bytes: ByteArray): org.w3c.dom.Document {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
+            // EPUB 來自不受信任的檔案。禁止 DOCTYPE 與外部實體，避免 XXE
+            // 讀取本機檔案或對內網發出請求。
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
             setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            // Android 的 parser 不一定實作 JAXP 1.5 屬性；DOCTYPE/實體 features
+            // 是主要防線，支援時再加上這兩層限制。
+            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "") }
+            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "") }
+            isXIncludeAware = false
+            setExpandEntityReferences(false)
         }
         return factory.newDocumentBuilder().parse(bytes.inputStream())
     }
 
     private fun readEntry(zip: ZipFile, path: String): ByteArray? {
         val entry = zip.getEntry(path) ?: zip.getEntry(path.removePrefix("/")) ?: return null
-        return zip.getInputStream(entry).use { it.readBytes() }
+        return zip.getInputStream(entry).use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > MAX_ENTRY_BYTES) throw IllegalArgumentException("EPUB 內含超過 32 MB 的單一檔案")
+                output.write(buffer, 0, read)
+            }
+            output.toByteArray()
+        }
     }
 
     /** 解析 baseDir 下的相對路徑（處理 ../），回傳 zip 內的完整路徑 */

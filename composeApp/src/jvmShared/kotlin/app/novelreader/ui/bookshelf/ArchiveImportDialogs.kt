@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.novelreader.platform.ArchiveEntryInfo
 
 /** 批次匯入進度（index 從 1 起） */
 data class BatchProgress(val index: Int, val total: Int, val name: String, val fraction: Float)
@@ -40,23 +39,29 @@ data class BatchSummary(
     val failures: List<Pair<String, String>>,
 )
 
-private fun formatSize(bytes: Long): String = when {
-    bytes < 0 -> ""
+/** 未知大小（-1）回 null */
+fun formatSize(bytes: Long): String? = when {
+    bytes < 0 -> null
     bytes < 1024 * 1024 -> "%.0f KB".format(bytes / 1024.0)
     else -> "%.1f MB".format(bytes / (1024.0 * 1024))
 }
 
-/** 壓縮檔內書檔勾選對話框 */
+/** 通用勾選清單：壓縮檔內書檔、資料夾內書檔、批次移除書籍共用 */
 @Composable
-fun ArchiveEntryPickerDialog(
-    entries: List<ArchiveEntryInfo>,
-    onConfirm: (List<ArchiveEntryInfo>) -> Unit,
+fun <T> BookPickerDialog(
+    entries: List<T>,
+    title: String,
+    confirmLabel: (count: Int) -> String,
+    label: (T) -> String,
+    subtitle: (T) -> String? = { null },
+    initiallyChecked: Boolean = true,
+    onConfirm: (List<T>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var checked by remember { mutableStateOf(entries.toSet()) }
+    var checked by remember { mutableStateOf(if (initiallyChecked) entries.toSet() else emptySet()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("選擇要匯入的書籍（${entries.size} 個檔案）") },
+        title = { Text(title) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -66,36 +71,35 @@ fun ArchiveEntryPickerDialog(
                             checked = if (all) entries.toSet() else emptySet()
                         },
                     )
-                    Text("全選", style = MaterialTheme.typography.bodyMedium)
+                    Text("全選（${entries.size}）", style = MaterialTheme.typography.bodyMedium)
                 }
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    items(entries) { entry ->
+                    items(entries) { item ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    checked = if (entry in checked) checked - entry else checked + entry
+                                    checked = if (item in checked) checked - item else checked + item
                                 }
                                 .padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
-                                checked = entry in checked,
+                                checked = item in checked,
                                 onCheckedChange = { on ->
-                                    checked = if (on) checked + entry else checked - entry
+                                    checked = if (on) checked + item else checked - item
                                 },
                             )
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    entry.displayName,
+                                    label(item),
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                val size = formatSize(entry.sizeBytes)
-                                if (size.isNotEmpty()) {
+                                subtitle(item)?.let {
                                     Text(
-                                        size,
+                                        it,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -109,9 +113,9 @@ fun ArchiveEntryPickerDialog(
         confirmButton = {
             TextButton(
                 enabled = checked.isNotEmpty(),
-                // 依原始順序匯入，不依勾選順序
+                // 依原始順序處理，不依勾選順序
                 onClick = { onConfirm(entries.filter { it in checked }) },
-            ) { Text("匯入（${checked.size} 本）") }
+            ) { Text(confirmLabel(checked.size)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
