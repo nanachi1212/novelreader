@@ -13,6 +13,13 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicLong
 
+/** SAPI stored display names as ids; OneCore omits their trailing " Desktop". */
+internal fun resolveOneCoreVoiceId(voiceId: String?, availableIds: Collection<String>): String? {
+    if (voiceId.isNullOrBlank()) return null
+    return availableIds.firstOrNull { it.equals(voiceId, ignoreCase = true) }
+        ?: availableIds.firstOrNull { it.equals(voiceId.removeSuffix(" Desktop"), ignoreCase = true) }
+}
+
 /**
  * Windows OneCore 朗讀引擎。
  *
@@ -33,6 +40,7 @@ class OneCoreTtsEngine : TtsEngine {
     @Volatile private var voicesDeferred: CompletableDeferred<List<TtsVoice>>? = null
     @Volatile private var readyDeferred: CompletableDeferred<Boolean>? = null
     @Volatile private var voicesCache: List<TtsVoice>? = null
+    @Volatile private var availableVoiceIds: List<String> = emptyList()
 
     override suspend fun listVoices(): List<TtsVoice> {
         voicesCache?.let { return it }
@@ -72,7 +80,8 @@ class OneCoreTtsEngine : TtsEngine {
             // OneCore SpeakingRate 的實際範圍約為 0.5–2.0；保留 App 的 0.5–4.0
             // UI 範圍，超過引擎上限時以 2.0 播放，避免整段派送失敗。
             val oneCoreRate = rate.coerceIn(0.5f, 2.0f)
-            return send("SPEAK\t$id\t$oneCoreRate\t${voiceId.orEmpty()}\t$clean")
+            val resolvedVoiceId = resolveOneCoreVoiceId(voiceId, availableVoiceIds)
+            return send("SPEAK\t$id\t$oneCoreRate\t${resolvedVoiceId.orEmpty()}\t$clean")
         }
     }
 
@@ -104,6 +113,7 @@ class OneCoreTtsEngine : TtsEngine {
         process?.let { if (it.isAlive) return true }
         process = null
         writer = null
+        availableVoiceIds = emptyList()
         try {
             val encoded = Base64.getEncoder()
                 .encodeToString(WORKER_SCRIPT.toByteArray(StandardCharsets.UTF_16LE))
@@ -151,6 +161,7 @@ class OneCoreTtsEngine : TtsEngine {
                     val line = reader.readLine() ?: break
                     val parts = line.split('\t')
                     when (parts[0]) {
+                        "VOICE_IDS" -> availableVoiceIds = parts.drop(1)
                         "READY" -> readyDeferred?.complete(true)
                         "FATAL" -> readyDeferred?.complete(false)
                         "VOICE" -> if (parts.size >= 3) {
@@ -194,6 +205,7 @@ try {
   ${'$'}null = [Windows.Media.Playback.MediaPlayer,Windows.Media.Playback,ContentType=WindowsRuntime]
   ${'$'}null = [Windows.Media.Core.MediaSource,Windows.Media.Core,ContentType=WindowsRuntime]
   ${'$'}synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+  ${'$'}defaultVoice = ${'$'}synth.Voice
   ${'$'}player = New-Object Windows.Media.Playback.MediaPlayer
   ${'$'}asTaskMethod = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     ${'$'}_.Name -eq 'AsTask' -and ${'$'}_.IsGenericMethodDefinition -and
@@ -208,6 +220,7 @@ try {
   [Console]::Out.WriteLine("FATAL`t" + ${'$'}_.Exception.Message)
   exit 1
 }
+[Console]::Out.WriteLine("VOICE_IDS`t" + (${'$'}voiceMap.Keys -join "`t"))
 [Console]::Out.WriteLine("READY")
 ${'$'}stdin = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding(${ '$' }false)))
 ${'$'}pending = ${'$'}null
@@ -248,8 +261,8 @@ while (${ '$' }running) {
         ${ '$' }requested = ${ '$' }parts[3]
         if (${ '$' }voiceMap.ContainsKey(${ '$' }requested)) {
           ${ '$' }synth.Voice = ${ '$' }voiceMap[${ '$' }requested]
-        } elseif (${ '$' }requested -match ' Desktop$' -and ${ '$' }voiceMap.ContainsKey(${ '$' }requested -replace ' Desktop$','')) {
-          ${ '$' }synth.Voice = ${ '$' }voiceMap[${ '$' }requested -replace ' Desktop$','']
+        } else {
+          ${ '$' }synth.Voice = ${ '$' }defaultVoice
         }
         try {
           ${ '$' }stream = Get-SpeechStream ${ '$' }parts[4]

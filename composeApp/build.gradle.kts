@@ -109,10 +109,6 @@ android {
         }
     }
 
-    lint {
-        // AGP 8.7 lint 的 lifecycle detector 與 Kotlin 2.2 analysis API 不相容。
-        disable += "NullSafeMutableLiveData"
-    }
 }
 
 compose.desktop {
