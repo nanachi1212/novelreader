@@ -61,7 +61,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.novelreader.generated.resources.Res
@@ -547,10 +546,11 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                     fontSize = settings.fontSizeSp.sp,
                     lineHeight = (settings.fontSizeSp * settings.lineHeightMult).sp,
                     fontFamily = fontFamily,
-                    // 首行縮排兩個字；Compose Desktop（Skiko）不支援 em，必須用 sp
-                    textIndent = TextIndent(firstLine = (settings.fontSizeSp * 2).sp),
                     color = MaterialTheme.colorScheme.onBackground,
                 )
+                // 正文欄寬上限約 52 字並置中，寬視窗時兩側留白
+                val textMaxWidth = (settings.fontSizeSp * 52).dp
+                val paragraphSpacing = (settings.fontSizeSp * 1.3f).dp
 
                 val itemsContent: LazyListScope.() -> Unit = {
                         items(ch.paragraphs.size) { i ->
@@ -559,6 +559,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 text = ch.paragraphs[i],
                                 style = paragraphStyle,
                                 modifier = Modifier
+                                    .widthIn(max = textMaxWidth)
                                     .fillMaxWidth()
                                     .then(state.platform.secondaryClickModifier("從這裡開始朗讀") {
                                         chromeVisible = false
@@ -601,7 +602,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 horizontal = settings.marginHorizontalDp.dp,
                                 vertical = settings.marginVerticalDp.dp,
                             ),
-                            horizontalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            horizontalArrangement = Arrangement.spacedBy(paragraphSpacing),
                             content = itemsContent,
                         )
                     } else {
@@ -612,7 +613,8 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                                 horizontal = settings.marginHorizontalDp.dp,
                                 vertical = settings.marginVerticalDp.dp,
                             ),
-                            verticalArrangement = Arrangement.spacedBy((settings.fontSizeSp * 0.55f).dp),
+                            verticalArrangement = Arrangement.spacedBy(paragraphSpacing),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             content = itemsContent,
                         )
                     }
