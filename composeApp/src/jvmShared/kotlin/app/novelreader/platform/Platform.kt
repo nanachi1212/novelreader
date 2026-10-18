@@ -7,13 +7,15 @@ import java.io.File
 import java.io.InputStream
 
 /** 一本書的原始檔來源（匯入與重新轉碼時使用） */
-interface BookSource {
+interface BookSource : java.io.Closeable {
     /** 檔名（含副檔名） */
     val displayName: String
     val sizeBytes: Long
     /** desktop: 絕對路徑；android: content:// URI 字串 */
     val uriOrPath: String
     fun open(): InputStream
+    /** 匯入結束（完成、失敗或取消）時呼叫，釋放暫存檔 */
+    override fun close() {}
 }
 
 /** 同步資料夾抽象（desktop: java.io.File；android: SAF DocumentFile） */

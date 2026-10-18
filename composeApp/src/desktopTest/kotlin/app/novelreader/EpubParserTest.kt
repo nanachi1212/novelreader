@@ -27,6 +27,26 @@ class EpubParserTest {
         assertFails { EpubParser.parse(file) }
     }
 
+    @Test
+    fun `spine 重複引用同一章節會被總量上限擋下`() {
+        val file = File.createTempFile("novelreader-repeat", ".epub").apply { deleteOnExit() }
+        val chapter = "<html><body><p>" + "字".repeat(4 * 1024 * 1024) + "</p></body></html>"
+        val spine = (1..200).joinToString("") { "<itemref idref=\"c\"/>" }
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write(containerXml.toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("OEBPS/content.opf"))
+            zip.write("""<?xml version="1.0"?><package><manifest>
+                <item id="c" href="c.xhtml" media-type="application/xhtml+xml"/>
+                </manifest><spine>$spine</spine></package>""".toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("OEBPS/c.xhtml"))
+            zip.write(chapter.toByteArray()); zip.closeEntry()
+        }
+
+        val error = assertFails { EpubParser.parse(file) }
+        assertTrue(error is IllegalArgumentException, error.toString())
+    }
+
     private val containerXml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
