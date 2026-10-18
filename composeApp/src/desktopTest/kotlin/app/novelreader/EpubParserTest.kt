@@ -28,7 +28,7 @@ class EpubParserTest {
     }
 
     @Test
-    fun `spine 重複引用同一章節會被總量上限擋下`() {
+    fun `spine 重複引用大量正文會被正文長度上限擋下`() {
         val file = File.createTempFile("novelreader-repeat", ".epub").apply { deleteOnExit() }
         val chapter = "<html><body><p>" + "字".repeat(4 * 1024 * 1024) + "</p></body></html>"
         val spine = (1..200).joinToString("") { "<itemref idref=\"c\"/>" }
@@ -44,7 +44,50 @@ class EpubParserTest {
         }
 
         val error = assertFails { EpubParser.parse(file) }
-        assertTrue(error is IllegalArgumentException, error.toString())
+        assertEquals("EPUB 正文過長，無法匯入", error.message)
+    }
+
+    /** 正文很少、標記（註解）很多：只會撞到實際讀取總量上限，不會撞到正文長度上限 */
+    private fun lowTextEpub(manifest: String, spine: String): File {
+        val file = File.createTempFile("novelreader-budget", ".epub").apply { deleteOnExit() }
+        val chapter = "<html><body><!--" + "x".repeat(20 * 1024 * 1024) + "--><p>短</p></body></html>"
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write(containerXml.toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("OEBPS/content.opf"))
+            zip.write("""<?xml version="1.0"?><package><manifest>$manifest</manifest><spine>$spine</spine></package>"""
+                .toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("OEBPS/c.xhtml"))
+            zip.write(chapter.toByteArray()); zip.closeEntry()
+        }
+        return file
+    }
+
+    private fun item(id: String) = """<item id="$id" href="c.xhtml" media-type="application/xhtml+xml"/>"""
+    private fun itemref(id: String) = """<itemref idref="$id"/>"""
+
+    @Test
+    fun `同一 idref 重複引用觸發實際讀取總量上限`() {
+        val file = lowTextEpub(manifest = item("c"), spine = itemref("c").repeat(20))
+        val error = assertFails { EpubParser.parse(file) }
+        assertEquals("EPUB 解壓後內容超過 256 MB", error.message)
+    }
+
+    @Test
+    fun `不同 idref 指向同一檔案也受讀取總量上限約束`() {
+        val ids = (1..20).map { "c$it" }
+        val file = lowTextEpub(
+            manifest = ids.joinToString("") { item(it) },
+            spine = ids.joinToString("") { itemref(it) },
+        )
+        val error = assertFails { EpubParser.parse(file) }
+        assertEquals("EPUB 解壓後內容超過 256 MB", error.message)
+    }
+
+    @Test
+    fun `少量 idref 指向同一檔案仍可正常解析`() {
+        val file = lowTextEpub(manifest = item("a") + item("b"), spine = itemref("a") + itemref("b"))
+        assertEquals(2, EpubParser.parse(file).chapters.size)
     }
 
     private val containerXml = """
