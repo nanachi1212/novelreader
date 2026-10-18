@@ -8,7 +8,8 @@ import java.util.UUID
  * 壓縮檔內單一 entry 的 BookSource：懶解壓到暫存檔。
  * resolveSource() 可能在主執行緒被呼叫，因此建構時不做任何 IO；
  * 真正解壓延到首次存取 sizeBytes / open()（都發生在 import() 的 IO dispatcher 內）。
- * 暫存檔 deleteOnExit；異常結束的殘留由啟動時的 tmp 清理收拾。
+ * 匯入結束時 close() 刪除暫存檔（批次匯入同時只留一份解壓檔）；
+ * deleteOnExit 與啟動時的 tmp 清理收拾異常結束的殘留。
  */
 class ArchiveEntryBookSource(
     private val archiveFile: File,
@@ -21,6 +22,12 @@ class ArchiveEntryBookSource(
     override val uriOrPath: String get() = ArchiveUri.build(archiveFile.absolutePath, entryPath)
     override val sizeBytes: Long get() = ensureExtracted().length()
     override fun open(): InputStream = ensureExtracted().inputStream()
+
+    @Synchronized
+    override fun close() {
+        extracted?.delete()
+        extracted = null
+    }
 
     @Synchronized
     private fun ensureExtracted(): File {

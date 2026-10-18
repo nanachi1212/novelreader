@@ -96,6 +96,8 @@ class BookRepository(
         } catch (e: Exception) {
             newFingerprint?.let { stores.deleteBook(it) }
             send(ImportState.Error(e.message ?: e.toString()))
+        } finally {
+            source.close()
         }
     }.flowOn(Dispatchers.IO)
 

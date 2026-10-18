@@ -20,6 +20,11 @@ object EpubParser {
 
     private const val MAX_ENTRY_BYTES = 32L * 1024 * 1024
     private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
+    private const val MAX_CHAPTERS = 20_000
+    private const val MAX_TEXT_CHARS = 64L * 1024 * 1024
+
+    /** 整次解析實際讀出的位元組數：spine 可重複引用同一檔案，宣告大小檢查擋不住 */
+    private class ReadBudget(var remaining: Long = MAX_TOTAL_BYTES)
 
     data class ParsedChapter(val title: String, val paragraphs: List<String>)
     data class ParsedBook(val chapters: List<ParsedChapter>, val coverBytes: ByteArray?)
@@ -31,6 +36,7 @@ object EpubParser {
 
     fun parse(epubFile: File): ParsedBook {
         ZipFile(epubFile).use { zip ->
+            val budget = ReadBudget()
             var declaredTotal = 0L
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
@@ -41,29 +47,33 @@ object EpubParser {
                 }
                 if (size > 0) declaredTotal += size
             }
-            val containerXml = readEntry(zip, "META-INF/container.xml")
+            val containerXml = readEntry(zip, "META-INF/container.xml", budget)
                 ?: throw IllegalArgumentException("不是有效的 EPUB 檔案（找不到 container.xml）")
             val opfPath = parseContainer(containerXml)
-            val opfBytes = readEntry(zip, opfPath)
+            val opfBytes = readEntry(zip, opfPath, budget)
                 ?: throw IllegalArgumentException("EPUB 缺少 OPF 檔案：$opfPath")
             val opfDir = opfPath.substringBeforeLast('/', "")
 
             val opf = parseOpf(opfBytes)
-            val navTitles = loadNavTitles(zip, opf, opfDir)
+            val navTitles = loadNavTitles(zip, opf, opfDir, budget)
 
-            val coverBytes = opf.coverHref?.let { readEntry(zip, resolvePath(opfDir, it)) }
+            val coverBytes = opf.coverHref?.let { readEntry(zip, resolvePath(opfDir, it), budget) }
 
             val chapters = ArrayList<ParsedChapter>()
+            var textChars = 0L
             for (idref in opf.spine) {
                 val item = opf.manifest[idref] ?: continue
                 if (!item.mediaType.contains("html") && !item.mediaType.contains("xml")) continue
                 val fullPath = resolvePath(opfDir, item.href)
-                val bytes = readEntry(zip, fullPath) ?: continue
+                val bytes = readEntry(zip, fullPath, budget) ?: continue
                 val html = String(bytes, detectHtmlCharset(bytes))
                 val doc = Jsoup.parse(html, fullPath)
 
                 val paragraphs = extractParagraphs(doc.body())
                 if (paragraphs.isEmpty()) continue
+                textChars += paragraphs.sumOf { it.length.toLong() }
+                if (textChars > MAX_TEXT_CHARS) throw IllegalArgumentException("EPUB 正文過長，無法匯入")
+                if (chapters.size >= MAX_CHAPTERS) throw IllegalArgumentException("EPUB 章節數過多，無法匯入")
 
                 val title = navTitles[normalizePath(fullPath)]
                     ?: doc.select("h1,h2,h3").firstOrNull()?.text()?.trim()?.takeIf { it.isNotBlank() }
@@ -154,10 +164,10 @@ object EpubParser {
 
     // ---- 目錄（EPUB3 nav 或 EPUB2 NCX），回傳「解析後路徑 → 標題」 ----
 
-    private fun loadNavTitles(zip: ZipFile, opf: Opf, opfDir: String): Map<String, String> {
+    private fun loadNavTitles(zip: ZipFile, opf: Opf, opfDir: String, budget: ReadBudget): Map<String, String> {
         opf.navHref?.let { navHref ->
             val fullPath = resolvePath(opfDir, navHref)
-            val bytes = readEntry(zip, fullPath)
+            val bytes = readEntry(zip, fullPath, budget)
             if (bytes != null) {
                 val titles = parseNav3(bytes, fullPath)
                 if (titles.isNotEmpty()) return titles
@@ -165,7 +175,7 @@ object EpubParser {
         }
         opf.ncxHref?.let { ncxHref ->
             val fullPath = resolvePath(opfDir, ncxHref)
-            val bytes = readEntry(zip, fullPath)
+            val bytes = readEntry(zip, fullPath, budget)
             if (bytes != null) return parseNcx2(bytes, fullPath.substringBeforeLast('/', ""))
         }
         return emptyMap()
@@ -250,7 +260,7 @@ object EpubParser {
         return factory.newDocumentBuilder().parse(bytes.inputStream())
     }
 
-    private fun readEntry(zip: ZipFile, path: String): ByteArray? {
+    private fun readEntry(zip: ZipFile, path: String, budget: ReadBudget): ByteArray? {
         val entry = zip.getEntry(path) ?: zip.getEntry(path.removePrefix("/")) ?: return null
         return zip.getInputStream(entry).use { input ->
             val output = ByteArrayOutputStream()
@@ -261,6 +271,8 @@ object EpubParser {
                 if (read < 0) break
                 total += read
                 if (total > MAX_ENTRY_BYTES) throw IllegalArgumentException("EPUB 內含超過 32 MB 的單一檔案")
+                budget.remaining -= read
+                if (budget.remaining < 0) throw IllegalArgumentException("EPUB 解壓後內容超過 256 MB")
                 output.write(buffer, 0, read)
             }
             output.toByteArray()

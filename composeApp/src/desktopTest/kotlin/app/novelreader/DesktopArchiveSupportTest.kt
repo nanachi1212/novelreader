@@ -107,4 +107,16 @@ class DesktopArchiveSupportTest {
         val archiveFp = Fingerprint.compute(ArchiveEntryBookSource(zip, "書.txt", "書.txt", tmpDir))
         assertEquals(directFp, archiveFp)
     }
+
+    @Test
+    fun `close 後刪除解壓暫存檔`() {
+        val zip = buildZip(entries = mapOf("書.txt" to bookContent.toByteArray()))
+        val tmpDir = File(System.getProperty("java.io.tmpdir"), "novelreader-test-close-${System.nanoTime()}")
+        val source = ArchiveEntryBookSource(zip, "書.txt", "書.txt", tmpDir)
+        source.open().use { it.readBytes() }
+        assertEquals(1, tmpDir.listFiles()!!.size)
+        source.close()
+        assertEquals(0, tmpDir.listFiles()!!.size)
+        tmpDir.delete()
+    }
 }
