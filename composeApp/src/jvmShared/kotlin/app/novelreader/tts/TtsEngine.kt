@@ -10,6 +10,9 @@ data class TtsVoice(
     val language: String,
 )
 
+/** 系統媒體控制（通知、鎖定畫面、藍牙耳機按鍵）送回的朗讀指令 */
+enum class TtsCommand { PLAY, PAUSE, NEXT, PREVIOUS, STOP }
+
 /**
  * 平台語音引擎抽象。實作端（SAPI / Android TTS）需保證：
  * - speak() 正常唸完才呼叫 onDone；被 stop() 中斷的段落不得再回呼
@@ -24,6 +27,11 @@ interface TtsEngine {
     fun stop()
     /** App 結束時釋放資源 */
     fun shutdown() {}
+    /**
+     * 朗讀工作階段狀態。Android 用前景服務＋媒體控制讓關螢幕也能一直唸，
+     * 系統送來的指令在主執行緒呼叫 [onCommand]；桌面版不需要。
+     */
+    fun updateSession(active: Boolean, playing: Boolean, title: String, onCommand: (TtsCommand) -> Unit) {}
 }
 
 /**

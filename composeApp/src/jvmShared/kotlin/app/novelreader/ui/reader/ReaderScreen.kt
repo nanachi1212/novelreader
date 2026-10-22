@@ -77,8 +77,10 @@ import app.novelreader.core.model.BookMeta
 import app.novelreader.core.model.SyncRecord
 import app.novelreader.core.model.ReadingDirection
 import app.novelreader.reader.ChapterLoader
+import app.novelreader.tts.TtsCommand
 import app.novelreader.ui.AppState
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -163,9 +165,9 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         }
     }
 
-    fun openChapter(index: Int, paragraph: Int = 0, highlight: Boolean = false, toEnd: Boolean = false) {
-        val ld = loader ?: return
-        if (ld.chapters.isEmpty()) return
+    fun openChapter(index: Int, paragraph: Int = 0, highlight: Boolean = false, toEnd: Boolean = false): Job? {
+        val ld = loader ?: return null
+        if (ld.chapters.isEmpty()) return null
         // 使用者主動跳章時停止朗讀；章節交界自動續唸（ttsResumeOnLoad）除外
         if (ttsActive && !ttsResumeOnLoad) {
             ttsController?.stop()
@@ -173,7 +175,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             ttsActive = false
         }
         val target = index.coerceIn(0, ld.chapters.lastIndex)
-        scope.launch {
+        return scope.launch {
             val loaded = ld.load(target)
             chapter = loaded
             autoAdvanceArmed = false
@@ -219,7 +221,15 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
                 val chNow = chapter
                 if (ldNow != null && chNow != null && chNow.index < ldNow.chapters.lastIndex) {
                     ttsResumeOnLoad = true
-                    openChapter(chNow.index + 1)
+                    val loading = openChapter(chNow.index + 1)
+                    // 關螢幕時 Compose 暫停重組，等 LaunchedEffect(chapterLoadTick) 會卡在章節交界：章節載好就直接續唸
+                    scope.launch {
+                        loading?.join()
+                        if (ttsResumeOnLoad) {
+                            ttsResumeOnLoad = false
+                            startTtsAt(0)
+                        }
+                    }
                 } else {
                     ttsPlaying = false
                 }
@@ -252,6 +262,24 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
             } else {
                 chromeVisible = false
                 startTtsAt(listState.firstVisibleItemIndex)
+            }
+        }
+    }
+
+    // 朗讀狀態同步到系統媒體控制（Android 前景服務、鎖定畫面、耳機按鍵）。
+    // 用 snapshotFlow 而不是隨重組觸發：關螢幕時重組暫停，狀態仍要即時更新
+    LaunchedEffect(ttsEngine) {
+        val engine = ttsEngine ?: return@LaunchedEffect
+        snapshotFlow { Triple(ttsActive, ttsPlaying, chapter?.title) }.collect { (active, playing, chapterTitle) ->
+            engine.updateSession(active, playing, listOfNotNull(meta.title, chapterTitle).joinToString(" · ")) { command ->
+                val paragraphs = chapter?.paragraphs.orEmpty()
+                when (command) {
+                    TtsCommand.PLAY -> startTtsAt(ttsParagraph)
+                    TtsCommand.PAUSE -> pauseTts()
+                    TtsCommand.NEXT -> if (ttsParagraph < paragraphs.lastIndex) startTtsAt(ttsParagraph + 1)
+                    TtsCommand.PREVIOUS -> if (ttsParagraph > 0) startTtsAt(ttsParagraph - 1)
+                    TtsCommand.STOP -> stopTts()
+                }
             }
         }
     }
@@ -396,6 +424,7 @@ fun ReaderScreen(state: AppState, meta: BookMeta) {
         onDispose {
             state.platform.setVolumeKeyHandler(null)
             ttsController?.stop()
+            ttsEngine?.updateSession(active = false, playing = false, title = "") {}
             state.platform.keepScreenOn(false)
             state.readerFlush = null
             val rec = record

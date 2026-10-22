@@ -141,6 +141,17 @@ fun BookshelfScreen(state: AppState) {
         }
     }
 
+    // 別的 App 用「開啟／分享」傳進來的書，走同一個單本匯入流程
+    // 匯入完才清掉：pendingImport 是這個 effect 的 key，提早改會把進行中的匯入取消
+    LaunchedEffect(state.pendingImport) {
+        val source = state.pendingImport ?: return@LaunchedEffect
+        try {
+            importSingle(source)
+        } finally {
+            state.pendingImport = null
+        }
+    }
+
     /** 批次匯入：逐本收 Flow、失敗續行、完成後留在書架顯示總結 */
     suspend fun importBatch(items: List<BatchItem>) {
         var imported = 0
