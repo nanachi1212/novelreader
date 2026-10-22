@@ -246,15 +246,25 @@ object EpubParser {
             isNamespaceAware = false
             // EPUB 來自不受信任的檔案。禁止 DOCTYPE 與外部實體，避免 XXE
             // 讀取本機檔案或對內網發出請求。
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            val hardened = runCatching {
+                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                setFeature("http://xml.org/sax/features/external-general-entities", false)
+                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            }.isSuccess
+            // Android 的 parser 不支援上面這些 Xerces feature（setFeature 直接丟例外，所有 EPUB 都匯入失敗），
+            // 它本身不讀外部實體；改成拒絕任何宣告實體的檔案，擋掉 XXE 與實體膨脹。
+            if (!hardened && String(bytes.filter { it != 0.toByte() }.toByteArray(), Charsets.ISO_8859_1)
+                    .contains("<!ENTITY", ignoreCase = true)
+            ) {
+                throw IllegalArgumentException("EPUB 含有不安全的 XML 實體宣告，已拒絕匯入")
+            }
             // Android 的 parser 不一定實作 JAXP 1.5 屬性；DOCTYPE/實體 features
             // 是主要防線，支援時再加上這兩層限制。
             runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "") }
             runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "") }
-            isXIncludeAware = false
+            // 預設就是 false；Android 的實作連設 false 都丟 UnsupportedOperationException
+            runCatching { isXIncludeAware = false }
             setExpandEntityReferences(false)
         }
         return factory.newDocumentBuilder().parse(bytes.inputStream())

@@ -1,12 +1,6 @@
 package app.novelreader.tts
 
 import android.content.Context
-import android.content.Intent
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import androidx.core.app.NotificationCompat
-import app.novelreader.MainActivity
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -17,7 +11,6 @@ import java.util.concurrent.atomic.AtomicLong
 
 class AndroidTtsEngine(context: Context) : TtsEngine {
     private val appContext = context.applicationContext
-    private val notifications = appContext.getSystemService(NotificationManager::class.java)
     private val ready = CompletableDeferred<Boolean>()
     private val ids = AtomicLong()
     @Volatile private var initialized = false
@@ -60,7 +53,6 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
             currentOnDone = null
             return false
         }
-        showNotification()
         return true
     }
 
@@ -68,13 +60,16 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
         currentId = null
         currentOnDone = null
         engine.stop()
-        notifications.cancel(NOTIFICATION_ID)
     }
 
     override fun shutdown() {
         stop()
+        TtsService.update(appContext, active = false, playing = false, title = "", onCommand = {})
         engine.shutdown()
     }
+
+    override fun updateSession(active: Boolean, playing: Boolean, title: String, onCommand: (TtsCommand) -> Unit) =
+        TtsService.update(appContext, active, playing, title, onCommand)
 
     private fun finish(utteranceId: String?) {
         if (utteranceId != currentId) return
@@ -82,38 +77,5 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
         currentId = null
         currentOnDone = null
         callback?.invoke()
-    }
-
-    private fun showNotification() {
-        try {
-            notifications.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "朗讀", NotificationManager.IMPORTANCE_LOW)
-            )
-            val intent = Intent(appContext, MainActivity::class.java).apply {
-                action = MainActivity.ACTION_STOP_TTS
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            val pending = PendingIntent.getActivity(
-                appContext, 1, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            notifications.notify(
-                NOTIFICATION_ID,
-                NotificationCompat.Builder(appContext, CHANNEL_ID)
-                    .setSmallIcon(android.R.drawable.ic_media_play)
-                    .setContentTitle("輕閱正在朗讀")
-                    .setContentText("點選停止朗讀")
-                    .setOngoing(true)
-                    .addAction(android.R.drawable.ic_media_pause, "停止", pending)
-                    .build(),
-            )
-        } catch (_: SecurityException) {
-            // Android 13 未授予通知權限時，朗讀本身仍可正常使用。
-        }
-    }
-
-    private companion object {
-        const val CHANNEL_ID = "novelreader_tts"
-        const val NOTIFICATION_ID = 1001
     }
 }

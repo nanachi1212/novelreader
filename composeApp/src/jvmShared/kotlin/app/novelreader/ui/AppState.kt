@@ -41,6 +41,8 @@ class AppState(val platform: Platform) {
         private set
     var screen by mutableStateOf<Screen>(Screen.Bookshelf)
     var syncFolderUri by mutableStateOf<String?>(null)
+    /** 別的 App 用「開啟／分享」傳進來的書：書架畫面接手走一般匯入，完成後直接開書 */
+    var pendingImport by mutableStateOf<app.novelreader.platform.BookSource?>(null)
 
     val fonts: List<AppFont> by lazy { platform.listFonts() }
 
@@ -76,6 +78,11 @@ class AppState(val platform: Platform) {
     }
 
     fun backToShelf() {
+        screen = Screen.Bookshelf
+    }
+
+    fun importExternal(source: app.novelreader.platform.BookSource) {
+        pendingImport = source
         screen = Screen.Bookshelf
     }
 
