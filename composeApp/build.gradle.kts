@@ -133,6 +133,7 @@ compose.desktop {
             modules("jdk.charsets")
             windows {
                 menuGroup = "NovelReader"
+                iconFile.set(project.file("../assets/morandi/app-icon.ico"))
             }
         }
     }
