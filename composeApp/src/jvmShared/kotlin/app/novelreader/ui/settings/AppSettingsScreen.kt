@@ -1,6 +1,7 @@
 package app.novelreader.ui.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,6 +71,37 @@ fun AppSettingsScreen(state: AppState) {
                     trailingContent = {
                         TextButton(onClick = { state.updateSettings { it.copy(syncFolderUri = null) } }) {
                             Text("清除")
+                        }
+                    },
+                )
+            }
+            if (!state.platform.isDesktop) {
+                HorizontalDivider()
+                val scanFolder = state.settings.scanFolderUri
+                ListItem(
+                    headlineContent = { Text("自動匯入下載資料夾") },
+                    supportingContent = {
+                        // tree URI 解碼後冒號後面就是「Download/萬用下載器/小說」這種路徑
+                        Text(
+                            scanFolder?.let { java.net.URLDecoder.decode(it, "UTF-8").substringAfterLast(':') }
+                                ?: "未設定。選萬用下載器的「小說」資料夾，下載好的書回到書架就會自動加入"
+                        )
+                    },
+                    trailingContent = {
+                        Row {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val uri = state.platform.pickScanFolder()
+                                    if (uri != null) state.updateSettings { it.copy(scanFolderUri = uri, scanSeen = emptyList()) }
+                                }
+                            }) {
+                                Text("選擇")
+                            }
+                            if (scanFolder != null) {
+                                TextButton(onClick = { state.updateSettings { it.copy(scanFolderUri = null, scanSeen = emptyList()) } }) {
+                                    Text("清除")
+                                }
+                            }
                         }
                     },
                 )

@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
             launchOpenDocument = {
                 openDocLauncher.launch(arrayOf("text/plain", "application/epub+zip"))
             },
-            launchOpenTree = { openTreeLauncher.launch(null) },
+            launchOpenTree = { initial -> openTreeLauncher.launch(initial) },
         )
         appState = AppState(platform)
         setContent {
@@ -64,6 +64,12 @@ class MainActivity : ComponentActivity() {
             else -> null
         } ?: return
         appState.importExternal(SafBookSource(this, uri))
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 回到 App 時重新掃描下載資料夾（在別的 App 下載完切回來就看得到）
+        appState.requestScan()
     }
 
     override fun onStop() {

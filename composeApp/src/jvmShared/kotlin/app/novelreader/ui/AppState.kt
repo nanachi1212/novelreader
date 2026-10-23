@@ -1,6 +1,7 @@
 package app.novelreader.ui
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.novelreader.core.convert.ChineseConvert
@@ -43,6 +44,13 @@ class AppState(val platform: Platform) {
     var syncFolderUri by mutableStateOf<String?>(null)
     /** 別的 App 用「開啟／分享」傳進來的書：書架畫面接手走一般匯入，完成後直接開書 */
     var pendingImport by mutableStateOf<app.novelreader.platform.BookSource?>(null)
+    /** 每次回到 App 加一，書架畫面據此重新掃描下載資料夾 */
+    var scanTick by mutableIntStateOf(0)
+        private set
+
+    fun requestScan() {
+        scanTick++
+    }
 
     val fonts: List<AppFont> by lazy { platform.listFonts() }
 

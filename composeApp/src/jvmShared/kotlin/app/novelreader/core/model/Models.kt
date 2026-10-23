@@ -78,6 +78,10 @@ data class ReaderSettings(
     /** Android 九宮格觸控：0 關閉、1 前頁、2 後頁。由左上到右下排列。 */
     val touchPageZones: List<Int> = List(9) { 0 },
     val syncFolderUri: String? = null,
+    /** Android 自動匯入的下載資料夾（SAF tree URI）：回到書架時把裡面新的 txt/epub 加進書架 */
+    val scanFolderUri: String? = null,
+    /** 下載資料夾裡已處理過的檔案 URI，從書架移除的書不會再被加回來 */
+    val scanSeen: List<String> = emptyList(),
     val deviceId: String = "",
     // desktop 視窗狀態
     val windowWidth: Int = 1000,
