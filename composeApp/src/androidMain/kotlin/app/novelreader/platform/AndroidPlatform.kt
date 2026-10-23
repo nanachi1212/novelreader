@@ -3,6 +3,8 @@ package app.novelreader.platform
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.DocumentsContract.Document
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -19,7 +21,8 @@ import java.io.InputStream
 class AndroidPlatform(
     private val activity: ComponentActivity,
     private val launchOpenDocument: () -> Unit,
-    private val launchOpenTree: () -> Unit,
+    /** 參數是選擇器一開始顯示的資料夾（只是建議，null 用系統預設） */
+    private val launchOpenTree: (Uri?) -> Unit,
 ) : Platform {
 
     private var volumeKeyHandler: ((Boolean) -> Boolean)? = null
@@ -57,19 +60,54 @@ class AndroidPlatform(
         return SafBookSource(activity, uri)
     }
 
-    override suspend fun pickSyncFolder(): SyncFolder? {
+    private suspend fun pickTree(initial: Uri?, flags: Int): Uri? {
         val deferred = CompletableDeferred<Uri?>()
         treeDeferred = deferred
-        withContext(Dispatchers.Main) { launchOpenTree() }
+        withContext(Dispatchers.Main) { launchOpenTree(initial) }
         val uri = deferred.await() ?: return null
         try {
-            activity.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
+            activity.contentResolver.takePersistableUriPermission(uri, flags)
         } catch (_: Exception) {
         }
-        return SafSyncFolder(activity, uri)
+        return uri
+    }
+
+    override suspend fun pickSyncFolder(): SyncFolder? =
+        pickTree(null, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            ?.let { SafSyncFolder(activity, it) }
+
+    override suspend fun pickScanFolder(): String? =
+        pickTree(DOWNLOADER_NOVELS, Intent.FLAG_GRANT_READ_URI_PERMISSION)?.toString()
+
+    /**
+     * 一個資料夾查一次（DocumentFile 每個檔案還要各查一次，截圖資料夾一堆 PNG 時很慢）。
+     * 「.」開頭的略過：下載中的檔案在磁碟上叫 .pending-*，還沒寫完。
+     */
+    override fun listScanFolder(uriOrPath: String): List<BookSource>? = try {
+        val tree = Uri.parse(uriOrPath)
+        val books = mutableListOf<BookSource>()
+        val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
+        fun walk(docId: String) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+            val cursor = activity.contentResolver.query(children, columns, null, null, null)
+                ?: throw java.io.IOException("無法讀取資料夾")
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0)
+                    val name = c.getString(1) ?: continue
+                    when {
+                        name.startsWith(".") -> {}
+                        c.getString(2) == Document.MIME_TYPE_DIR -> walk(id)
+                        name.endsWith(".txt", ignoreCase = true) || name.endsWith(".epub", ignoreCase = true) ->
+                            books += SafBookSource(activity, DocumentsContract.buildDocumentUriUsingTree(tree, id))
+                    }
+                }
+            }
+        }
+        walk(DocumentsContract.getTreeDocumentId(tree))
+        books
+    } catch (_: Exception) {
+        null
     }
 
     override fun resolveSource(uriOrPath: String): BookSource? = try {
@@ -125,6 +163,13 @@ class AndroidPlatform(
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
     } catch (_: Exception) {
         null
+    }
+
+    private companion object {
+        /** 萬用下載器存小說的地方（下載/萬用下載器/小說），選資料夾時先開在這裡 */
+        val DOWNLOADER_NOVELS: Uri = DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents", "primary:Download/萬用下載器/小說"
+        )
     }
 }
 

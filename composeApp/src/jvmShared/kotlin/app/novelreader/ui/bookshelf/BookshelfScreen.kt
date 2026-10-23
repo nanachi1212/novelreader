@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -42,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +66,7 @@ import app.novelreader.ui.Screen
 import app.novelreader.ui.formatPercent
 import app.novelreader.ui.formatRelativeTime
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -101,6 +104,7 @@ fun BookshelfScreen(state: AppState) {
     var sortMode by remember { mutableStateOf(SortMode.RECENT) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var activeTag by remember { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(state.library) {
         val map = HashMap<String, ReadingProgress>()
@@ -146,14 +150,16 @@ fun BookshelfScreen(state: AppState) {
     LaunchedEffect(state.pendingImport) {
         val source = state.pendingImport ?: return@LaunchedEffect
         try {
+            // 下載資料夾的自動匯入還在跑就先等它，同一本書不要兩邊同時寫
+            snapshotFlow { batchProgress }.first { it == null }
             importSingle(source)
         } finally {
             state.pendingImport = null
         }
     }
 
-    /** 批次匯入：逐本收 Flow、失敗續行、完成後留在書架顯示總結 */
-    suspend fun importBatch(items: List<BatchItem>) {
+    /** 批次匯入：逐本收 Flow、失敗續行、完成後留在書架顯示總結（[quiet]：沒有新書也沒有失敗就不顯示） */
+    suspend fun importBatch(items: List<BatchItem>, quiet: Boolean = false) {
         var imported = 0
         var skipped = 0
         var similar = 0
@@ -181,7 +187,30 @@ fun BookshelfScreen(state: AppState) {
         }
         batchProgress = null
         state.refreshLibrary()
-        batchSummary = BatchSummary(imported, skipped, similar, failures)
+        if (!quiet || imported > 0 || failures.isNotEmpty()) {
+            batchSummary = BatchSummary(imported, skipped, similar, failures)
+        }
+    }
+
+    // 自動匯入下載資料夾：回到書架或回到 App 時，把資料夾裡沒處理過的 txt/epub 加進書架。
+    // 正在匯入時先跳過，下次回來再掃。整批做完才記進 scanSeen（只留資料夾裡還在的檔案，清單不會越積越長）；
+    // 中途被打斷就下次重試，已匯入的會依指紋略過
+    LaunchedEffect(state.scanTick, state.settings.scanFolderUri) {
+        val folder = state.settings.scanFolderUri ?: return@LaunchedEffect
+        val (books, items) = withContext(Dispatchers.IO) {
+            val books = state.platform.listScanFolder(folder) ?: return@withContext null
+            val seen = state.settings.scanSeen.toHashSet()
+            books to books.filter { it.uriOrPath !in seen }.map { b -> BatchItem(b.displayName, null, emptyList()) { b } }
+        } ?: return@LaunchedEffect
+        if (items.isEmpty() || batchProgress != null || importState != null || state.pendingImport != null) return@LaunchedEffect
+        // 先佔住 batchProgress：重掃會跳過、外部傳來的書會等這批做完；匯入放在畫面的 scope，重掃不會中斷它
+        batchProgress = BatchProgress(1, items.size, items[0].name, 0f)
+        scope.launch {
+            importBatch(items, quiet = true)
+            state.updateSettings {
+                if (it.scanFolderUri == folder) it.copy(scanSeen = books.map { b -> b.uriOrPath }) else it
+            }
+        }
     }
 
     fun startImport() {
@@ -256,6 +285,8 @@ fun BookshelfScreen(state: AppState) {
                 }
             }
     }
+    // 第一本換人（例如剛匯入的新書）就捲回頂端；清單預設停在原本第一本的位置，新書會被擠到畫面外
+    LaunchedEffect(visibleBooks.firstOrNull()?.fingerprint) { listState.scrollToItem(0) }
 
     Scaffold(
         topBar = {
@@ -352,7 +383,7 @@ fun BookshelfScreen(state: AppState) {
                     if (state.platform.isDesktop)
                         "點右下角「匯入書籍」選擇 txt / epub / 壓縮檔，或「匯入資料夾」一次匯入整個資料夾"
                     else
-                        "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀",
+                        "點右下角「匯入書籍」選擇 txt 或 epub 檔開始閱讀，或到設定開啟「自動匯入下載資料夾」",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -368,6 +399,7 @@ fun BookshelfScreen(state: AppState) {
         } else {
             LazyColumn(
                 Modifier.fillMaxSize().padding(padding),
+                state = listState,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = 16.dp, end = 16.dp, top = 8.dp,
                     bottom = if (state.platform.isDesktop) 160.dp else 88.dp, // 桌面有兩顆 FAB

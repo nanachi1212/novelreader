@@ -45,6 +45,10 @@ interface Platform {
     suspend fun pickSyncFolder(): SyncFolder?
     /** 選一個資料夾並遞迴列出內含 txt/epub；取消或平台不支援回傳 null（目前僅桌面版） */
     suspend fun pickBookFolder(): List<FolderBook>? = null
+    /** 選自動匯入的下載資料夾，回傳給 listScanFolder 用的 URI；取消或平台不支援回傳 null（目前僅 Android） */
+    suspend fun pickScanFolder(): String? = null
+    /** 遞迴列出下載資料夾內的 txt/epub；權限失效或讀不到回傳 null */
+    fun listScanFolder(uriOrPath: String): List<BookSource>? = null
     /** 從先前存下的 uriOrPath 還原書籍來源（檔案已不存在/權限失效回傳 null） */
     fun resolveSource(uriOrPath: String): BookSource?
     fun resolveSyncFolder(uriOrPath: String): SyncFolder?
